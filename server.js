@@ -359,8 +359,8 @@ app.get('/api/sessions', async (req, res) => {
       openTimeNotice = "⏰ 本場次已於 18:00 截止報名";
     } else {
       openTimeNotice = isUserMember 
-        ? `${memberOpenTime.getMonth() + 1}/${memberOpenTime.getDate()} 18:00 開放 (當天18:00截止)`
-        : `${nonMemberOpenTime.getMonth() + 1}/${nonMemberOpenTime.getDate()} 22:00 開放 (當天18:00截止)`;
+        ? `${memberOpenTime.getMonth() + 1}/${memberOpenTime.getDate()} 18:00 開放 (球敘當天18:00截止)`
+        : `${nonMemberOpenTime.getMonth() + 1}/${nonMemberOpenTime.getDate()} 22:00 開放 (球敘當天18:00截止)`;
     }
 
     const isUserRegistered = userEmail ? (registeredEmails[s.id] && registeredEmails[s.id].has(userEmail)) : false;
