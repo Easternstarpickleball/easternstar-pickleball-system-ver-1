@@ -16,7 +16,7 @@ app.use(express.static(path.join(__dirname, '/')));
 const MEMBER_SPREADSHEET_ID = '1j-KMHvmPIuIziymLE_85G6gCbrZyHzj9CgQeevjels0';
 const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
 
-// 💡 球敘場次設定（1=週一, 2=週二, 3=週三, 4=週四, 5=週五, 6=週六, 0=週日）
+// 💡 球敘場次設定：只需要寫星期幾，開放時間由程式統一計算
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
   { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
@@ -35,7 +35,7 @@ sessions.forEach(s => {
   registeredEmails[s.id] = new Set();
 });
 
-// 🔑 取得指定的 Google 試算表物件（解析 GOOGLE_JSON_KEY）
+// 🔑 取得 Google 試算表物件（讀取 GOOGLE_JSON_KEY）
 async function getGoogleDoc(spreadsheetId) {
   const jsonKeyString = process.env.GOOGLE_JSON_KEY;
 
@@ -45,14 +45,12 @@ async function getGoogleDoc(spreadsheetId) {
 
   let creds;
   try {
-    // 💡 將 Render 裡面的 JSON 字串轉成物件
     creds = JSON.parse(jsonKeyString);
   } catch (err) {
-    throw new Error('❌ GOOGLE_JSON_KEY 格式解析失敗，請確認 Render 內的值為正確的 JSON 格式！');
+    throw new Error('❌ GOOGLE_JSON_KEY 格式解析失敗！');
   }
 
   const clientEmail = creds.client_email;
-  // 處理可能包含的換行符號
   const privateKey = creds.private_key ? creds.private_key.replace(/\\n/g, '\n') : undefined;
 
   const serviceAccountAuth = new JWT({
@@ -66,8 +64,10 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔍 搜尋會員姓名
-async function findNameByEmail(userEmail) {
+// 🔍 搜尋會員姓名，並回傳是否為會員 (isMember: true/false)
+async function checkMemberStatus(userEmail) {
+  if (!userEmail) return { isMember: false, userName: '非會員 / 未登記' };
+
   try {
     const doc = await getGoogleDoc(MEMBER_SPREADSHEET_ID);
     const memberSheet = doc.sheetsByTitle['會員名單'] || doc.sheetsByIndex[0];
@@ -79,20 +79,20 @@ async function findNameByEmail(userEmail) {
     });
 
     if (found) {
-      return found.get('姓名') || found.get('姓名/暱稱') || '已登記會員';
+      const userName = found.get('姓名') || found.get('姓名/暱稱') || '已登記會員';
+      return { isMember: true, userName: userName };
     } else {
-      return '非會員 / 未登記';
+      return { isMember: false, userName: '非會員 / 未登記' };
     }
   } catch (err) {
     console.error('❌ 查詢會員資料庫失敗：', err.message);
-    return '查無姓名';
+    return { isMember: false, userName: '查無姓名' };
   }
 }
 
 // 📊 寫入試算表邏輯
-async function saveToGoogleSheet(dateStr, userEmail, status) {
+async function saveToGoogleSheet(dateStr, userEmail, userName, status) {
   try {
-    const userName = await findNameByEmail(userEmail);
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
     
     let sheet = doc.sheetsByTitle[dateStr];
@@ -128,7 +128,7 @@ async function saveToGoogleSheet(dateStr, userEmail, status) {
   }
 }
 
-// 計算日期輔助函式
+// 計算活動日期輔助函式
 function getSessionTargetDate(dayOfWeekTarget) {
   const today = new Date();
   const dayOfWeek = today.getDay();
@@ -145,18 +145,66 @@ app.get('/ping', (req, res) => {
   res.status(200).send('PONG');
 });
 
-// API: 取得場次與自動排序
-app.get('/api/sessions', (req, res) => {
+// API: 取得場次（包含：前一天 18:00 會員開放 / 22:00 非會員開放）
+app.get('/api/sessions', async (req, res) => {
+  const now = new Date();
+  const token = req.query.token;
+
+  let isUserMember = false;
+  if (token) {
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: token,
+        audience: GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+      const memberInfo = await checkMemberStatus(payload.email);
+      isUserMember = memberInfo.isMember;
+    } catch (e) {
+      isUserMember = false;
+    }
+  }
+
   let result = sessions.map(s => {
     const dateStr = getSessionTargetDate(s.day);
     const dateParts = dateStr.split('-');
     const displayDate = `${dateParts[1]}/${dateParts[2]}`;
 
+    // 💡 1. 算出前一天的 18:00 (會員) 與 22:00 (非會員)
+    const targetDate = new Date(dateStr);
+    
+    const memberOpenTime = new Date(targetDate);
+    memberOpenTime.setDate(targetDate.getDate() - 1);
+    memberOpenTime.setHours(18, 0, 0, 0); // 前一天 18:00
+
+    const nonMemberOpenTime = new Date(targetDate);
+    nonMemberOpenTime.setDate(targetDate.getDate() - 1);
+    nonMemberOpenTime.setHours(22, 0, 0, 0); // 前一天 22:00
+
+    // 💡 2. 判斷當前使用者是否到達開放時間
+    let isOpen = false;
+    let openTimeNotice = "";
+
+    if (isUserMember) {
+      // 會員判斷：是否到了前一天 18:00
+      isOpen = now >= memberOpenTime;
+      const m = memberOpenTime.getMonth() + 1;
+      const d = memberOpenTime.getDate();
+      openTimeNotice = `${m}/${d} 18:00 (會員開放)`;
+    } else {
+      // 非會員判斷：是否到了前一天 22:00
+      isOpen = now >= nonMemberOpenTime;
+      const m = nonMemberOpenTime.getMonth() + 1;
+      const d = nonMemberOpenTime.getDate();
+      openTimeNotice = `${m}/${d} 22:00 (非會員開放)`;
+    }
+
     return {
       ...s,
       dateStr: dateStr,
       displayDate: displayDate,
-      isOpen: true,
+      isOpen: isOpen,
+      openTimeStr: openTimeNotice,
       remainingSeats: seatsCache[s.id] !== undefined ? seatsCache[s.id] : s.limit,
       waitlistCount: waitlistCache[s.id] !== undefined ? waitlistCache[s.id] : 0
     };
@@ -183,7 +231,6 @@ app.post('/api/grab', async (req, res) => {
     const payload = ticket.getPayload();
     userEmail = payload.email;
   } catch (authErr) {
-    console.error('❌ Token 驗證失敗：', authErr.message);
     return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效，請重新登入！" });
   }
 
@@ -194,7 +241,31 @@ app.post('/api/grab', async (req, res) => {
     return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
   }
 
+  // 🔒 雙重驗證：檢查權限與開放時間
+  const memberInfo = await checkMemberStatus(cleanEmail);
   const dateStr = getSessionTargetDate(targetSession.day);
+  const targetDate = new Date(dateStr);
+  const now = new Date();
+
+  if (memberInfo.isMember) {
+    // 會員：檢查是否到了前一天 18:00
+    const memberOpenTime = new Date(targetDate);
+    memberOpenTime.setDate(targetDate.getDate() - 1);
+    memberOpenTime.setHours(18, 0, 0, 0);
+
+    if (now < memberOpenTime) {
+      return res.json({ success: false, message: "🔒 會員報名時間未到！（前一天 18:00 開放）" });
+    }
+  } else {
+    // 非會員：檢查是否到了前一天 22:00
+    const nonMemberOpenTime = new Date(targetDate);
+    nonMemberOpenTime.setDate(targetDate.getDate() - 1);
+    nonMemberOpenTime.setHours(22, 0, 0, 0);
+
+    if (now < nonMemberOpenTime) {
+      return res.json({ success: false, message: "🔒 非會員報名時間未到！（前一天 22:00 開放）" });
+    }
+  }
 
   if (registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail)) {
     return res.json({ success: false, message: "❌ 您已經報名過此場次囉！請勿重複送出。" });
@@ -220,7 +291,7 @@ app.post('/api/grab', async (req, res) => {
     return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
   }
 
-  saveToGoogleSheet(dateStr, cleanEmail, statusText);
+  saveToGoogleSheet(dateStr, cleanEmail, memberInfo.userName, statusText);
 
   res.json({ 
     success: isSuccess, 
