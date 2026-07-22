@@ -175,7 +175,7 @@ app.get('/api/sessions', async (req, res) => {
     
     const memberOpenTime = new Date(targetDate);
     memberOpenTime.setDate(targetDate.getDate() - 1);
-    memberOpenTime.setHours(18, 0, 0, 0); // 前一天 18:00
+    memberOpenTime.setHours(16, 0, 0, 0); // 前一天 18:00
 
     const nonMemberOpenTime = new Date(targetDate);
     nonMemberOpenTime.setDate(targetDate.getDate() - 1);
