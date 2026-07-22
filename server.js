@@ -152,10 +152,10 @@ async function saveToGoogleSheet(dateStr, userEmail, userName, status) {
   }
 }
 
-// 計算活動日期輔助函式
+// 計算活動日期輔助函式（修正：補上 today 的宣告）
 function getSessionTargetDate(dayOfWeekTarget) {
-  // 💡 強制將目前時間轉為台灣時間
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  // 💡 強制將目前時間轉為台灣時間並作為基準
+  const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const dayOfWeek = today.getDay();
   let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
   if (daysUntil === 0) daysUntil = 7;
@@ -172,7 +172,6 @@ app.get('/ping', (req, res) => {
 
 // API: 取得場次
 app.get('/api/sessions', async (req, res) => {
-  // 💡 強制將目前時間轉為台灣時間
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const token = req.query.token;
 
@@ -286,7 +285,7 @@ app.post('/api/grab', async (req, res) => {
 
   const dateStr = getSessionTargetDate(targetSession.day);
   const targetDate = new Date(dateStr);
-  const now = new Date();
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
 
   // 時間檢查
   if (memberInfo.isMember) {
