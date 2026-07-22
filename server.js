@@ -28,25 +28,25 @@ app.use(express.static(path.join(__dirname, '/')));
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, 
   max: 100, 
-  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret', // 壓測跳過
+  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret',
   message: { success: false, message: "⚠️ 請求過於頻繁，請稍後再試！" }
 });
 
 const grabLimiter = rateLimit({
   windowMs: 10 * 1000, 
   max: 100, 
-  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret', // 壓測跳過
+  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret',
   message: { success: false, message: "⚠️ 搶位太快囉，請勿點擊過快！" }
 });
 
 app.use('/api/', apiLimiter);
 
-// 💡 球敘場次設定
+// 💡 球敘場次設定（新增週五與英文名稱支援）
 const sessions = [
-  { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
-  { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
-  { id: "fri", name: "週五匹克球團", day: 5, limit: 36, waitlistLimit: 30 },
-  { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
+  { id: "tue", name: "週二匹克球團", nameEn: "Tuesday Session", day: 2, limit: 36, waitlistLimit: 30 },
+  { id: "thu", name: "週四匹克球團", nameEn: "Thursday Session", day: 4, limit: 36, waitlistLimit: 30 },
+  { id: "fri", name: "週五匹克球團", nameEn: "Friday Session", day: 5, limit: 36, waitlistLimit: 30 }, // 👈 新增星期五
+  { id: "sat", name: "週六匹克球團", nameEn: "Saturday Session", day: 6, limit: 36, waitlistLimit: 30 }
 ];
 
 // 初始化記憶體快取
@@ -64,7 +64,7 @@ sessions.forEach(s => {
 
 let memberMapCache = new Map();
 let lastFetchTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 分鐘快取
+const CACHE_DURATION = 5 * 60 * 1000;
 
 // 🔒 輔助函式：Email 脫敏
 function maskEmail(email) {
@@ -311,7 +311,7 @@ function getSessionTargetDate(dayOfWeekTarget) {
 // 健康檢查 Endpoint
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次 (含當天 18:00 截止邏輯，名單依然公開)
+// API: 取得場次 (含雙語欄位與報名截止判斷)
 app.get('/api/sessions', async (req, res) => {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const token = req.query.token;
@@ -336,17 +336,14 @@ app.get('/api/sessions', async (req, res) => {
     const displayDate = `${dateParts[1]}/${dateParts[2]}`;
     const targetDate = new Date(dateStr);
     
-    // 會員開放時間：前一天 18:00
     const memberOpenTime = new Date(targetDate);
     memberOpenTime.setDate(targetDate.getDate() - 1);
     memberOpenTime.setHours(18, 0, 0, 0);
 
-    // 非會員開放時間：前一天 22:00
     const nonMemberOpenTime = new Date(targetDate);
     nonMemberOpenTime.setDate(targetDate.getDate() - 1);
     nonMemberOpenTime.setHours(22, 0, 0, 0);
 
-    // 💡 截止報名時間：球敘當天 18:00
     const closeTime = new Date(targetDate);
     closeTime.setHours(18, 0, 0, 0);
 
@@ -381,7 +378,7 @@ app.get('/api/sessions', async (req, res) => {
       isUserRegistered: isUserRegistered,
       remainingSeats: seatsCache[s.id] !== undefined ? seatsCache[s.id] : s.limit,
       waitlistCount: waitlistCache[s.id] !== undefined ? waitlistCache[s.id] : 0,
-      attendees: sanitizedAttendees // 名單保持公開傳回
+      attendees: sanitizedAttendees
     };
   });
 
@@ -389,7 +386,7 @@ app.get('/api/sessions', async (req, res) => {
   res.json({ isMember: isUserMember, sessions: result });
 });
 
-// API: 搶位與候補 (含當天 18:00 後端截止防護)
+// API: 搶位與候補
 app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
@@ -399,7 +396,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   const targetSession = sessions.find(s => s.id === sessionId);
   if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
 
-  // 💡 後端時間關卡：超過當天 18:00 拒絕報名
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const dateStr = getSessionTargetDate(targetSession.day);
   const closeTime = new Date(dateStr);
@@ -409,7 +405,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     return res.json({ success: false, message: "⏰ 該場次已於當天 18:00 截止報名，無法再送出報名！" });
   }
 
-  // 壓測 Bypass 檢查
   const isStressTest = req.headers['x-stress-test'] === 'pickleball-test-secret';
 
   let userEmail = '';
@@ -440,7 +435,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     finalUserName = customName.trim();
   }
 
-  // 🔒 雙重防線防重複報名
   const isAlreadyRegisteredInSet = registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail);
   const isAlreadyInList = sessionAttendees[sessionId] && sessionAttendees[sessionId].some(a => a.email.toLowerCase() === cleanEmail);
 
@@ -467,7 +461,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   recalculateSessionStatus(sessionId);
 
   const myRecord = sessionAttendees[sessionId].find(a => a.email === cleanEmail);
-  const isSuccess = true;
   const resMessage = myRecord.status === '正取' 
     ? "🎉 搶位成功！已為您保留正取名額！" 
     : `⚠️ 正取已滿！已成功為您登記為【${myRecord.status}】！`;
@@ -482,7 +475,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   }));
 
   res.json({ 
-    success: isSuccess, 
+    success: true, 
     message: resMessage,
     remainingSeats: seatsCache[sessionId],
     waitlistCount: waitlistCache[sessionId],
@@ -538,13 +531,10 @@ app.post('/api/cancel', async (req, res) => {
   });
 });
 
-// --- 管理員專用 API 區塊 ---
-
+// --- 管理員專用 API ---
 app.post('/api/admin/toggle-pause', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== ADMIN_SECRET) {
-    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
-  }
+  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
 
   isSystemActive = !isSystemActive;
   const statusStr = isSystemActive ? "🟢 系統已恢復開放" : "🔴 系統已暫停（維護中）";
@@ -553,22 +543,16 @@ app.post('/api/admin/toggle-pause', async (req, res) => {
 
 app.post('/api/admin/add-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== ADMIN_SECRET) {
-    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
-  }
+  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
 
   const { sessionId, name, email } = req.body;
-  if (!sessionId || !name || !email) {
-    return res.status(400).json({ success: false, message: "❌ 欄位填寫不完整！" });
-  }
+  if (!sessionId || !name || !email) return res.status(400).json({ success: false, message: "❌ 欄位填寫不完整！" });
 
   const cleanEmail = email.trim().toLowerCase();
   const targetSession = sessions.find(s => s.id === sessionId);
   if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到場次！" });
 
-  if (registeredEmails[sessionId].has(cleanEmail)) {
-    return res.json({ success: false, message: "⚠️ 該球友已經在名單中了！" });
-  }
+  if (registeredEmails[sessionId].has(cleanEmail)) return res.json({ success: false, message: "⚠️ 該球友已經在名單中了！" });
 
   const memberInfo = await checkMemberStatus(cleanEmail);
 
@@ -582,16 +566,13 @@ app.post('/api/admin/add-user', async (req, res) => {
   });
 
   recalculateSessionStatus(sessionId);
-
   triggerSheetSync(sessionId);
   res.json({ success: true, message: `✅ 已成功手動新增【${name}】！` });
 });
 
 app.post('/api/admin/remove-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== ADMIN_SECRET) {
-    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
-  }
+  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
 
   const { sessionId, email } = req.body;
   const cleanEmail = email.trim().toLowerCase();
@@ -604,16 +585,13 @@ app.post('/api/admin/remove-user', async (req, res) => {
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
 
   recalculateSessionStatus(sessionId);
-
   triggerSheetSync(sessionId);
   res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
 });
 
 app.post('/api/admin/reorder-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== ADMIN_SECRET) {
-    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
-  }
+  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
 
   const { sessionId, email, newPosition } = req.body;
   const cleanEmail = email.trim().toLowerCase();
@@ -637,20 +615,14 @@ app.post('/api/admin/reorder-user', async (req, res) => {
   list.splice(targetIndex, 0, movedUser);
 
   recalculateSessionStatus(sessionId);
-
   triggerSheetSync(sessionId);
 
-  res.json({ 
-    success: true, 
-    message: `✅ 已成功將【${movedUser.name}】調整至第 ${newPosition} 位！` 
-  });
+  res.json({ success: true, message: `✅ 已成功將【${movedUser.name}】調整至第 ${newPosition} 位！` });
 });
 
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== ADMIN_SECRET) {
-    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
-  }
+  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
 
   try {
     await reloadFromSheet();
