@@ -8,7 +8,7 @@
   <style>
     body { font-family: Arial, sans-serif; background-color: #f0f2f5; padding: 20px; text-align: center; }
     .card { background: white; max-width: 450px; margin: 20px auto; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-    h1 { color: #2e7d32; font-size: 26px; margin-bottom: 10px; }
+    h1 { font-size: 26px; margin-bottom: 10px; transition: color 0.3s; }
     .date-title { color: #555; font-size: 18px; margin-bottom: 20px; font-weight: bold; }
     .status-box { background-color: #e8f5e9; color: #1b5e20; padding: 15px; border-radius: 8px; font-size: 18px; margin-bottom: 20px; }
     .session-container { margin: 15px 0; padding: 15px; background: #fdfdfd; border: 1px dashed #ccc; border-radius: 10px; }
@@ -16,29 +16,37 @@
     .session-btn { display: block; width: 100%; margin: 10px 0; padding: 12px; font-size: 16px; border-radius: 8px; cursor: pointer; color: white; border: none; font-weight: bold; transition: background 0.2s; }
     .session-btn:disabled { background: #ccc !important; cursor: not-allowed; opacity: 0.7; }
     
-    /* 🎨 固定一到日專屬顏色 */
-    .day-mon { background-color: #6f42c1; } /* 週一：紫色 */
+    /* 🎨 文字與按鈕通用顏色定義 */
+    .color-mon, .day-mon { color: #6f42c1; } /* 週一：紫色 */
+    .day-mon { background-color: #6f42c1; color: white; }
     .day-mon:hover:not(:disabled) { background-color: #59359a; }
 
-    .day-tue { background-color: #007bff; } /* 週二：藍色 */
+    .color-tue, .day-tue { color: #007bff; } /* 週二：藍色 */
+    .day-tue { background-color: #007bff; color: white; }
     .day-tue:hover:not(:disabled) { background-color: #0056b3; }
 
-    .day-wed { background-color: #f1c40f; color: #333; } /* 週三：黃色 */
+    .color-wed, .day-wed { color: #d4ac0d; } /* 週三：黃色 */
+    .day-wed { background-color: #f1c40f; color: #333; }
     .day-wed:hover:not(:disabled) { background-color: #d4ac0d; }
 
-    .day-thu { background-color: #28a745; } /* 週四：綠色 */
+    .color-thu, .day-thu { color: #28a745; } /* 週四：綠色 */
+    .day-thu { background-color: #28a745; color: white; }
     .day-thu:hover:not(:disabled) { background-color: #1e7e34; }
 
-    .day-fri { background-color: #e83e8c; } /* 週五：桃粉色 */
+    .color-fri, .day-fri { color: #e83e8c; } /* 週五：粉色 */
+    .day-fri { background-color: #e83e8c; color: white; }
     .day-fri:hover:not(:disabled) { background-color: #c2185b; }
 
-    .day-sat { background-color: #fd7e14; } /* 週六：橘色 */
+    .color-sat, .day-sat { color: #fd7e14; } /* 週六：橘色 */
+    .day-sat { background-color: #fd7e14; color: white; }
     .day-sat:hover:not(:disabled) { background-color: #d96302; }
 
-    .day-sun { background-color: #dc3545; } /* 週日：紅色 */
+    .color-sun, .day-sun { color: #dc3545; } /* 週日：紅色 */
+    .day-sun { background-color: #dc3545; color: white; }
     .day-sun:hover:not(:disabled) { background-color: #bd2130; }
 
-    .day-default { background-color: #6c757d; } /* 預設：灰色 */
+    .color-default, .day-default { color: #2e7d32; } /* 預設：深綠色 */
+    .day-default { background-color: #6c757d; color: white; }
     .day-default:hover:not(:disabled) { background-color: #545b62; }
 
     .btn-submit { background-color: #ff4757; color: white; border: none; padding: 15px 30px; font-size: 22px; font-weight: bold; border-radius: 10px; cursor: pointer; width: 100%; box-shadow: 0 4px 10px rgba(255, 71, 87, 0.4); margin-top: 15px; }
@@ -50,11 +58,11 @@
 <body>
 
   <div class="card">
-    <h1 id="event-title">匹克球團秒搶報名</h1>
+    <h1 id="event-title" class="color-default">匹克球團秒搶報名</h1>
     <div class="date-title">請選擇下方場次</div>
 
-    <div class="status-box">
-      剩餘名額：<strong id="seats" style="font-size: 28px; color: #d63031;">--</strong>
+    <div class="status-box" id="status-box-container">
+      <span id="status-label">剩餘名額：</span><strong id="seats" style="font-size: 28px; color: #d63031;">--</strong>
     </div>
 
     <div id="auth-box" style="margin-bottom: 20px;">
@@ -140,17 +148,17 @@
       return JSON.parse(jsonPayload);
     }
 
-    // 🎨 完整涵蓋週一至週日的顏色判定 logic
-    function getDayColorClass(session) {
+    // 🎨 判定星期的前綴字 (mon, tue, wed, thu, fri, sat, sun)
+    function getDayPrefix(session) {
       const str = (session.name + " " + session.displayDate);
-      if (str.includes("一") || str.includes("Mon")) return "day-mon";
-      if (str.includes("二") || str.includes("Tue")) return "day-tue";
-      if (str.includes("三") || str.includes("Wed")) return "day-wed";
-      if (str.includes("四") || str.includes("Thu")) return "day-thu";
-      if (str.includes("五") || str.includes("Fri")) return "day-fri";
-      if (str.includes("六") || str.includes("Sat")) return "day-sat";
-      if (str.includes("日") || str.includes("天") || str.includes("Sun")) return "day-sun";
-      return "day-default";
+      if (str.includes("一") || str.includes("Mon")) return "mon";
+      if (str.includes("二") || str.includes("Tue")) return "tue";
+      if (str.includes("三") || str.includes("Wed")) return "wed";
+      if (str.includes("四") || str.includes("Thu")) return "thu";
+      if (str.includes("五") || str.includes("Fri")) return "fri";
+      if (str.includes("六") || str.includes("Sat")) return "sat";
+      if (str.includes("日") || str.includes("天") || str.includes("Sun")) return "sun";
+      return "default";
     }
 
     async function loadSessions() {
@@ -164,11 +172,16 @@
 
         sessions.forEach(s => {
           const btn = document.createElement('button');
-          const dayClass = getDayColorClass(s);
-          btn.className = `session-btn ${dayClass}`;
+          const prefix = getDayPrefix(s);
+          btn.className = `session-btn day-${prefix}`;
           
           if (s.isOpen) {
-            btn.innerText = `${s.name} (${s.displayDate}) - 剩餘 ${s.remainingSeats} 位`;
+            // 按鈕文字顯示邏輯
+            if (s.remainingSeats > 0) {
+              btn.innerText = `${s.name} (${s.displayDate}) - 剩餘 ${s.remainingSeats} 位`;
+            } else {
+              btn.innerText = `${s.name} (${s.displayDate}) - 候補第 ${s.waitlistCount + 1} 位`;
+            }
             btn.onclick = () => selectSession(s);
           } else {
             btn.innerText = `🔒 ${s.name} (${s.displayDate}) - ${s.openTimeStr} 開放`;
@@ -176,8 +189,9 @@
           }
           btnContainer.appendChild(btn);
 
+          // 若目前已點選該場次，同步更新名額/候補顯示
           if (selectedSession && selectedSession.id === s.id) {
-            document.getElementById('seats').innerText = s.remainingSeats;
+            updateSeatsDisplay(s);
           }
         });
       } catch (err) {
@@ -187,12 +201,40 @@
 
     function selectSession(session) {
       selectedSession = session;
-      document.getElementById('event-title').innerText = `${session.name}`;
-      document.getElementById('seats').innerText = session.remainingSeats;
+      const titleElem = document.getElementById('event-title');
+      const prefix = getDayPrefix(session);
+
+      // 1. 設定主標題名稱與對應顏色 Class
+      titleElem.innerText = `${session.name}`;
+      titleElem.className = `color-${prefix}`;
+
+      // 2. 更新名額或候補顯示
+      updateSeatsDisplay(session);
       
       const grabBtn = document.getElementById('btn-grab');
       grabBtn.disabled = false;
-      grabBtn.innerText = `🔥 立即搶位 (${session.displayDate})`;
+      
+      if (session.remainingSeats > 0) {
+        grabBtn.innerText = `🔥 立即搶位 (${session.displayDate})`;
+      } else {
+        grabBtn.innerText = `⚠️ 搶候補位 (${session.displayDate})`;
+      }
+    }
+
+    // 💡 獨立的名額/候補顯示更新函式
+    function updateSeatsDisplay(session) {
+      const labelElem = document.getElementById('status-label');
+      const seatsElem = document.getElementById('seats');
+
+      if (session.remainingSeats > 0) {
+        // 正取階段：從 36 往下扣
+        labelElem.innerText = "剩餘名額：";
+        seatsElem.innerText = session.remainingSeats;
+      } else {
+        // 候補階段：從 1 開始往上加
+        labelElem.innerText = "候補名額：";
+        seatsElem.innerText = `第 ${session.waitlistCount + 1} 位`;
+      }
     }
 
     async function startGrab() {

@@ -16,7 +16,7 @@ app.use(express.static(path.join(__dirname, '/')));
 const MEMBER_SPREADSHEET_ID = '1j-KMHvmPIuIziymLE_85G6gCbrZyHzj9CgQeevjels0';
 const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
 
-// 💡 球敘場次設定（提示：day 代表星期幾，1=週一, 2=週二, 3=週三, 4=週四, 5=週五, 6=週六, 0=週日）
+// 💡 球敘場次設定（1=週一, 2=週二, 3=週三, 4=週四, 5=週五, 6=週六, 0=週日）
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
   { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
@@ -24,7 +24,7 @@ const sessions = [
   { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
 
-// 初始化記憶體快取
+// 初始化快取
 const seatsCache = {};
 const waitlistCache = {};
 const registeredEmails = {};
@@ -35,7 +35,7 @@ sessions.forEach(s => {
   registeredEmails[s.id] = new Set();
 });
 
-// 🔑 取得指定的 Google 試算表物件（讀取 Render 環境變數）
+// 🔑 取得指定的 Google 試算表物件
 async function getGoogleDoc(spreadsheetId) {
   const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
   const privateKey = process.env.GOOGLE_PRIVATE_KEY 
@@ -57,7 +57,7 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔍 輔助函式：從【會員資料庫試算表】搜尋姓名
+// 🔍 搜尋會員姓名
 async function findNameByEmail(userEmail) {
   try {
     const doc = await getGoogleDoc(MEMBER_SPREADSHEET_ID);
@@ -80,7 +80,7 @@ async function findNameByEmail(userEmail) {
   }
 }
 
-// 📊 試算表寫入邏輯：自動新建日期分頁並寫入【球敘報名總表】
+// 📊 寫入試算表邏輯
 async function saveToGoogleSheet(dateStr, userEmail, status) {
   try {
     const userName = await findNameByEmail(userEmail);
@@ -119,7 +119,7 @@ async function saveToGoogleSheet(dateStr, userEmail, status) {
   }
 }
 
-// 計算活動日期的輔助函式
+// 計算日期輔助函式
 function getSessionTargetDate(dayOfWeekTarget) {
   const today = new Date();
   const dayOfWeek = today.getDay();
@@ -131,12 +131,12 @@ function getSessionTargetDate(dayOfWeekTarget) {
   return `${nextDate.getFullYear()}-${nextDate.getMonth() + 1}-${nextDate.getDate()}`;
 }
 
-// 🏓 健康檢查接口
+// 健康檢查
 app.get('/ping', (req, res) => {
   res.status(200).send('PONG');
 });
 
-// API: 取得當前場次與名額狀態（包含自動排序）
+// API: 取得場次與自動排序
 app.get('/api/sessions', (req, res) => {
   let result = sessions.map(s => {
     const dateStr = getSessionTargetDate(s.day);
@@ -153,13 +153,11 @@ app.get('/api/sessions', (req, res) => {
     };
   });
 
-  // 💡 自動依「實際日期」由近到遠排序（例如 8/1 前面、8/3 後面）
   result.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
-
   res.json(result);
 });
 
-// API: 搶位與候補接口
+// API: 搶位與候補
 app.post('/api/grab', async (req, res) => {
   const { sessionId, token } = req.body;
 
