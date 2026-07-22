@@ -22,7 +22,6 @@
       --theme-sat: linear-gradient(135deg, #e6b89c, #cd853f);
       --theme-sun: linear-gradient(135deg, #805ad5, #6b46c1);
       --theme-default: linear-gradient(135deg, #708090, #4a5568);
-
     }
 
     body { 
@@ -32,6 +31,13 @@
       padding: 15px; 
       margin: 0;
       text-align: center; 
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .main-wrapper {
+      flex: 1;
     }
 
     .card { 
@@ -43,46 +49,6 @@
       box-shadow: 0 10px 30px rgba(0,0,0,0.06); 
       transition: all 0.3s ease; 
     }
-    
-    /* 🌐 頂部工具列 */
-    .top-actions-bar { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      margin-bottom: 20px; 
-    }
-    .lang-switch-container { display: flex; gap: 8px; }
-    .lang-btn { 
-      background: #edf2f7; 
-      border: 1px solid #cbd5e0; 
-      padding: 6px 14px; 
-      border-radius: 8px; 
-      cursor: pointer; 
-      font-size: 14px; 
-      font-weight: 600; 
-      color: #4a5568;
-      transition: all 0.2s; 
-    }
-    .lang-btn.active { 
-      background: #4a5568; 
-      color: white; 
-      border-color: #4a5568; 
-    }
-    .contact-admin-btn { 
-      display: inline-flex; 
-      align-items: center; 
-      gap: 5px; 
-      padding: 6px 14px; 
-      background-color: #5a7d7c; 
-      color: white; 
-      text-decoration: none; 
-      font-size: 14px; 
-      font-weight: 600; 
-      border-radius: 8px; 
-      transition: background-color 0.2s; 
-      cursor: pointer; 
-    }
-    .contact-admin-btn:hover { background-color: #486564; }
 
     /* 📌 頂部 Banner */
     .header-banner {
@@ -96,6 +62,21 @@
     }
     .header-banner h1 { font-size: 26px; margin: 0 0 8px 0; font-weight: 700; letter-spacing: 0.5px; }
     .header-banner .date-sub { font-size: 16px; opacity: 0.95; }
+
+    /* 💡 溫馨提醒卡片 */
+    .notice-card {
+      background-color: #fffaf0;
+      border-left: 4px solid #dd6b20;
+      padding: 14px 18px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #744210;
+      text-align: left;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+    .notice-card h3 { font-size: 15px; margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px; }
 
     /* 📊 狀態欄與資訊卡片 */
     .status-box { 
@@ -247,76 +228,138 @@
     .status-tag.waitlist { background-color: #feebc8; color: #744210; }
     .empty-text { color: #a0aec0; font-size: 14px; font-style: italic; margin: 10px 0; text-align: center; }
 
+    /* 🌐 頁尾 (Footer) 整合區域 */
+    footer {
+      margin-top: 40px;
+      padding: 24px 15px;
+      background-color: #edf2f7;
+      border-top: 1px solid #e2e8f0;
+      border-radius: 16px;
+      font-size: 14px;
+      color: #4a5568;
+    }
+    .footer-tools {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .lang-btn { 
+      background: #ffffff; 
+      border: 1px solid #cbd5e0; 
+      padding: 6px 14px; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-size: 13px; 
+      font-weight: 600; 
+      color: #4a5568;
+      transition: all 0.2s; 
+    }
+    .lang-btn.active { 
+      background: #4a5568; 
+      color: white; 
+      border-color: #4a5568; 
+    }
+    .contact-admin-btn { 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 5px; 
+      padding: 6px 14px; 
+      background-color: #5a7d7c; 
+      color: white; 
+      text-decoration: none; 
+      font-size: 13px; 
+      font-weight: 600; 
+      border-radius: 8px; 
+      transition: background-color 0.2s; 
+      cursor: pointer; 
+    }
+    .contact-admin-btn:hover { background-color: #486564; }
+
     /* 🛠️ 管理員工具箱 */
-    .admin-bar { margin-top: 30px; padding-top: 18px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #718096; }
+    .admin-bar { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e0; font-size: 13px; color: #718096; }
     .admin-btn-group { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
-    .btn-admin-action { background: #718096; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.2s; }
+    .btn-admin-action { background: #718096; color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; transition: background 0.2s; }
     .btn-admin-action:hover { background: #4a5568; }
   </style>
 </head>
 <body>
 
-  <div class="card">
-    <div class="top-actions-bar">
+  <div class="main-wrapper">
+    <div class="card">
+      
+      <div id="main-banner" class="header-banner theme-default">
+        <h1 id="event-title" data-i18n="appTitle">匹克球搶位系統</h1>
+        <div id="event-date" class="date-sub" data-i18n="selectSessionHint">請點選下方場次卡片</div>
+      </div>
+
+      <div class="notice-card">
+        <h3 data-i18n="noticeTitle">💡 報名溫馨提醒</h3>
+        <span data-i18n="noticeContent">
+          1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>
+          2. 搶位時若剛好跨過開放秒數，可按 <strong>F5 重新整理</strong> 取得最新狀態。<br>
+          3. 非會員報名時請務必填寫中文真實大名以利核對。
+        </span>
+      </div>
+
+      <div class="status-box" id="status-box-container">
+        <span id="status-label" data-i18n="remainingSeatsLabel">剩餘名額：</span>
+        <strong id="seats" class="seats-highlight">--</strong>
+      </div>
+
+      <div id="auth-box" style="margin-bottom: 20px;">
+        <p style="color: #4a5568; font-size: 15px; font-weight: 600;" data-i18n="googleAuthHint">請先驗證 Google 帳號：</p>
+        <div id="g_id_onload"
+             data-client_id="329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com"
+             data-callback="handleCredentialResponse">
+        </div>
+        <div class="g_id_signin" data-type="standard"></div>
+      </div>
+
+      <div id="user-profile" class="user-info" style="display: none;">
+        <span id="user-profile-text"></span>
+        <button class="btn-logout" onclick="logout()" data-i18n="logoutBtn">登出</button>
+      </div>
+
+      <div id="non-member-name-box" class="input-box" style="display: none;">
+        <label for="custom-name" data-i18n="inputNameLabel">✍️ 請輸入中文大名：</label>
+        <input type="text" id="custom-name" placeholder="例如：王小明">
+      </div>
+
+      <div id="session-selector" class="session-container">
+        <h3 style="margin-top:0; color:#4a5568; font-size: 16px; text-align: left;" data-i18n="selectSessionTitle">📅 選擇場次：</h3>
+        <div id="session-buttons" data-i18n="loading">載入中...</div>
+      </div>
+
+      <div class="action-btn-group">
+        <button id="btn-grab" class="btn-submit" onclick="startGrab()" disabled data-i18n="btnSelectFirst">請先選擇場次</button>
+        <button id="btn-cancel" class="btn-cancel-action" onclick="startCancel()" disabled data-i18n="btnCancel">取消報名</button>
+      </div>
+
+      <div id="attendees-section" class="attendees-container" style="display: none;">
+        <div class="attendees-title">
+          <span id="attendees-title-text" data-i18n="attendeeListTitle">📋 報名名單</span>
+          <span style="font-size: 13px; color: #a0aec0; font-weight: normal;" data-i18n="realtimeUpdate">(即時更新)</span>
+        </div>
+        <div class="attendees-list" id="attendees-list">
+          <p class="empty-text" data-i18n="clickSessionToLoad">請點擊上方場次以載入名單</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-tools">
       <div class="lang-switch-container">
         <button id="btn-lang-zh" onclick="switchLanguage('zh')" class="lang-btn active">中文</button>
         <button id="btn-lang-en" onclick="switchLanguage('en')" class="lang-btn">English</button>
       </div>
-      <a href="#" 
-         onclick="openContactAdmin(event)" 
-         class="contact-admin-btn" 
-         data-i18n="contactAdmin">
+      <a href="#" onclick="openContactAdmin(event)" class="contact-admin-btn" data-i18n="contactAdmin">
         ✉️ 聯絡管理員
       </a>
-    </div>
-
-    <div id="main-banner" class="header-banner theme-default">
-      <h1 id="event-title" data-i18n="appTitle">匹克球搶位系統</h1>
-      <div id="event-date" class="date-sub" data-i18n="selectSessionHint">請點選下方場次卡片</div>
-    </div>
-
-    <div class="status-box" id="status-box-container">
-      <span id="status-label" data-i18n="remainingSeatsLabel">剩餘名額：</span>
-      <strong id="seats" class="seats-highlight">--</strong>
-    </div>
-
-    <div id="auth-box" style="margin-bottom: 20px;">
-      <p style="color: #4a5568; font-size: 15px; font-weight: 600;" data-i18n="googleAuthHint">請先驗證 Google 帳號：</p>
-      <div id="g_id_onload"
-           data-client_id="329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com"
-           data-callback="handleCredentialResponse">
-      </div>
-      <div class="g_id_signin" data-type="standard"></div>
-    </div>
-
-    <div id="user-profile" class="user-info" style="display: none;">
-      <span id="user-profile-text"></span>
-      <button class="btn-logout" onclick="logout()" data-i18n="logoutBtn">登出</button>
-    </div>
-
-    <div id="non-member-name-box" class="input-box" style="display: none;">
-      <label for="custom-name" data-i18n="inputNameLabel">✍️ 請輸入中文大名：</label>
-      <input type="text" id="custom-name" placeholder="例如：王小明">
-    </div>
-
-    <div id="session-selector" class="session-container">
-      <h3 style="margin-top:0; color:#4a5568; font-size: 16px; text-align: left;" data-i18n="selectSessionTitle">📅 選擇場次：</h3>
-      <div id="session-buttons" data-i18n="loading">載入中...</div>
-    </div>
-
-    <div class="action-btn-group">
-      <button id="btn-grab" class="btn-submit" onclick="startGrab()" disabled data-i18n="btnSelectFirst">請先選擇場次</button>
-      <button id="btn-cancel" class="btn-cancel-action" onclick="startCancel()" disabled data-i18n="btnCancel">取消報名</button>
-    </div>
-
-    <div id="attendees-section" class="attendees-container" style="display: none;">
-      <div class="attendees-title">
-        <span id="attendees-title-text" data-i18n="attendeeListTitle">📋 報名名單</span>
-        <span style="font-size: 13px; color: #a0aec0; font-weight: normal;" data-i18n="realtimeUpdate">(即時更新)</span>
-      </div>
-      <div class="attendees-list" id="attendees-list">
-        <p class="empty-text" data-i18n="clickSessionToLoad">請點擊上方場次以載入名單</p>
-      </div>
     </div>
 
     <div class="admin-bar">
@@ -329,7 +372,7 @@
         <button class="btn-admin-action" onclick="triggerAdminSync()" data-i18n="adminSync">🔄 強制同步試算表</button>
       </div>
     </div>
-  </div>
+  </footer>
 
   <script>
     let selectedSession = null;
@@ -354,11 +397,13 @@
       }
     }
 
-    // 🌐 雙語字典檔
+    // 🌐 雙語字典檔 (已加入溫馨提醒字典)
     const i18n = {
       zh: {
         appTitle: "匹克球團搶位系統",
         contactAdmin: "✉️ 聯絡管理員",
+        noticeTitle: "💡 報名溫馨提醒",
+        noticeContent: "1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>2. 搶位時若剛好跨過開放秒數，可按 <strong>F5 重新整理</strong> 取得最新狀態。<br>3. 非會員報名時請務必填寫中文真實大名以利核對。",
         selectSessionHint: "請點選下方場次卡片",
         remainingSeatsLabel: "剩餘名額：",
         waitlistLabel: "候補位置：",
@@ -390,6 +435,8 @@
       en: {
         appTitle: "Pickleball Signup System",
         contactAdmin: "✉️ Contact Admin",
+        noticeTitle: "💡 Notice",
+        noticeContent: "1. Members: Opens 18:00 day before session. Non-members: Opens 22:00.<br>2. Please refresh (F5) at opening time to update page.<br>3. Non-members must enter real full name for verification.",
         selectSessionHint: "Please select a session card below",
         remainingSeatsLabel: "Seats Left: ",
         waitlistLabel: "Waitlist Spot: ",
@@ -430,7 +477,7 @@
       document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
         if (i18n[lang][key]) {
-          el.innerText = i18n[lang][key];
+          el.innerHTML = i18n[lang][key];
         }
       });
 
