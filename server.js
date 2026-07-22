@@ -71,7 +71,8 @@ async function getGoogleDoc(spreadsheetId) {
 
 // 🔄 更新會員名單快取
 async function refreshMemberCache() {
-  const now = Date.now();
+  // 💡 強制將目前時間轉為台灣時間
+const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) {
     return;
   }
@@ -153,7 +154,8 @@ async function saveToGoogleSheet(dateStr, userEmail, userName, status) {
 
 // 計算活動日期輔助函式
 function getSessionTargetDate(dayOfWeekTarget) {
-  const today = new Date();
+  // 💡 強制將目前時間轉為台灣時間
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const dayOfWeek = today.getDay();
   let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
   if (daysUntil === 0) daysUntil = 7;
@@ -170,7 +172,8 @@ app.get('/ping', (req, res) => {
 
 // API: 取得場次
 app.get('/api/sessions', async (req, res) => {
-  const now = new Date();
+  // 💡 強制將目前時間轉為台灣時間
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const token = req.query.token;
 
   let isUserMember = false;
