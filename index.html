@@ -13,24 +13,32 @@
     .status-box { background-color: #e8f5e9; color: #1b5e20; padding: 15px; border-radius: 8px; font-size: 18px; margin-bottom: 20px; }
     .session-container { margin: 15px 0; padding: 15px; background: #fdfdfd; border: 1px dashed #ccc; border-radius: 10px; }
     
-    /* 按鈕基礎樣式 */
     .session-btn { display: block; width: 100%; margin: 10px 0; padding: 12px; font-size: 16px; border-radius: 8px; cursor: pointer; color: white; border: none; font-weight: bold; transition: background 0.2s; }
     .session-btn:disabled { background: #ccc !important; cursor: not-allowed; opacity: 0.7; }
     
-    /* 星期專屬顏色設定 */
+    /* 🎨 固定一到日專屬顏色 */
+    .day-mon { background-color: #6f42c1; } /* 週一：紫色 */
+    .day-mon:hover:not(:disabled) { background-color: #59359a; }
+
     .day-tue { background-color: #007bff; } /* 週二：藍色 */
     .day-tue:hover:not(:disabled) { background-color: #0056b3; }
 
-    .day-wed { background-color: #f1c40f; color: #333; } /* 週三：黃色 (文字設深色避免看不清) */
+    .day-wed { background-color: #f1c40f; color: #333; } /* 週三：黃色 */
     .day-wed:hover:not(:disabled) { background-color: #d4ac0d; }
 
     .day-thu { background-color: #28a745; } /* 週四：綠色 */
     .day-thu:hover:not(:disabled) { background-color: #1e7e34; }
 
+    .day-fri { background-color: #e83e8c; } /* 週五：桃粉色 */
+    .day-fri:hover:not(:disabled) { background-color: #c2185b; }
+
     .day-sat { background-color: #fd7e14; } /* 週六：橘色 */
     .day-sat:hover:not(:disabled) { background-color: #d96302; }
 
-    .day-default { background-color: #6c757d; }
+    .day-sun { background-color: #dc3545; } /* 週日：紅色 */
+    .day-sun:hover:not(:disabled) { background-color: #bd2130; }
+
+    .day-default { background-color: #6c757d; } /* 預設：灰色 */
     .day-default:hover:not(:disabled) { background-color: #545b62; }
 
     .btn-submit { background-color: #ff4757; color: white; border: none; padding: 15px 30px; font-size: 22px; font-weight: bold; border-radius: 10px; cursor: pointer; width: 100%; box-shadow: 0 4px 10px rgba(255, 71, 87, 0.4); margin-top: 15px; }
@@ -76,13 +84,11 @@
     let userToken = null;
     let pollInterval = null;
 
-    // 頁面載入時檢查是否有暫存的 Token
     window.onload = function() {
       const savedToken = localStorage.getItem('pickleball_token');
       if (savedToken) {
         try {
           const payload = parseJwt(savedToken);
-          // 檢查 Token 是否過期
           if (payload.exp * 1000 > Date.now()) {
             userToken = savedToken;
             showLoggedInState(payload.name, payload.email);
@@ -97,7 +103,6 @@
       }
     };
 
-    // Google 登入後的回調函式
     function handleCredentialResponse(response) {
       userToken = response.credential;
       localStorage.setItem('pickleball_token', userToken);
@@ -120,14 +125,12 @@
       location.reload();
     }
 
-    // 每 3 秒自動更新場次狀態與剩餘名額
     function startPolling() {
       if (!pollInterval) {
         pollInterval = setInterval(loadSessions, 3000);
       }
     }
 
-    // 解析 JWT Token 取得基本資訊 (顯示介面用)
     function parseJwt(token) {
       var base64Url = token.split('.')[1];
       var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -137,22 +140,19 @@
       return JSON.parse(jsonPayload);
     }
 
-    // 依據星期回傳對應的 CSS class
+    // 🎨 完整涵蓋週一至週日的顏色判定 logic
     function getDayColorClass(session) {
       const str = (session.name + " " + session.displayDate);
-      if (str.includes("二") || str.includes("Tue") || str.includes("週二") || str.includes("星期二")) {
-        return "day-tue";
-      } else if (str.includes("三") || str.includes("Wed") || str.includes("週三") || str.includes("星期三")) {
-        return "day-wed"; // 已修正：正確對應 day-wed
-      } else if (str.includes("四") || str.includes("Thu") || str.includes("週四") || str.includes("星期四")) {
-        return "day-thu";
-      } else if (str.includes("六") || str.includes("Sat") || str.includes("週六") || str.includes("星期六")) {
-        return "day-sat";
-      }
+      if (str.includes("一") || str.includes("Mon")) return "day-mon";
+      if (str.includes("二") || str.includes("Tue")) return "day-tue";
+      if (str.includes("三") || str.includes("Wed")) return "day-wed";
+      if (str.includes("四") || str.includes("Thu")) return "day-thu";
+      if (str.includes("五") || str.includes("Fri")) return "day-fri";
+      if (str.includes("六") || str.includes("Sat")) return "day-sat";
+      if (str.includes("日") || str.includes("天") || str.includes("Sun")) return "day-sun";
       return "day-default";
     }
 
-    // 載入場次列表
     async function loadSessions() {
       try {
         const url = userToken ? `/api/sessions?token=${encodeURIComponent(userToken)}` : '/api/sessions';
@@ -165,7 +165,6 @@
         sessions.forEach(s => {
           const btn = document.createElement('button');
           const dayClass = getDayColorClass(s);
-          
           btn.className = `session-btn ${dayClass}`;
           
           if (s.isOpen) {
@@ -186,7 +185,6 @@
       }
     }
 
-    // 選擇場次
     function selectSession(session) {
       selectedSession = session;
       document.getElementById('event-title').innerText = `${session.name}`;
@@ -197,7 +195,6 @@
       grabBtn.innerText = `🔥 立即搶位 (${session.displayDate})`;
     }
 
-    // 搶位 API 呼叫：僅傳送 sessionId 與加密 Token 給後端
     async function startGrab() {
       if (!selectedSession || !userToken) {
         alert("請先登入 Google 帳號！");
@@ -213,7 +210,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId: selectedSession.id,
-            token: userToken // 🔒 純 Token 傳送，由後端解析真實 Email 寫入 DB
+            token: userToken
           })
         });
 

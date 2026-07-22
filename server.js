@@ -1,38 +1,57 @@
 const express = require('express');
 const path = require('path');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
-const { JWT } = require('google-auth-library');
+const { JWT, OAuth2Client } = require('google-auth-library');
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 🔒 驗證用 Client ID
+const GOOGLE_CLIENT_ID = '329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com';
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '/')));
 
-// 💡 1. 設定兩個獨立的 Google 試算表 ID
-const MEMBER_SPREADSHEET_ID = '1j-KMHvmPIuIziymLE_85G6gCbrZyHzj9CgQeevjels0'; // 只用來讀取姓名
-const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI'; // 用來建立日期分頁與寫入報名
+// 💡 試算表 ID
+const MEMBER_SPREADSHEET_ID = '1j-KMHvmPIuIziymLE_85G6gCbrZyHzj9CgQeevjels0';
+const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
 
-// 💡 2. 球敘場次設定
+// 💡 球敘場次設定（提示：day 代表星期幾，1=週一, 2=週二, 3=週三, 4=週四, 5=週五, 6=週六, 0=週日）
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
+  { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
   { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
-  { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 },
-  { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 }
+  { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
 
-// 記憶體快取名額與候補
-const seatsCache = { tue: 36, thu: 36, sat: 36, wed: 36 };
-const waitlistCache = { tue: 0, thu: 0, sat: 0, wed: 0 };
-const registeredEmails = { tue: new Set(), thu: new Set(), sat: new Set(),  wed: new Set()};
+// 初始化記憶體快取
+const seatsCache = {};
+const waitlistCache = {};
+const registeredEmails = {};
 
-// 🔑 取得指定的 Google 試算表物件
+sessions.forEach(s => {
+  seatsCache[s.id] = s.limit;
+  waitlistCache[s.id] = 0;
+  registeredEmails[s.id] = new Set();
+});
+
+// 🔑 取得指定的 Google 試算表物件（讀取 Render 環境變數）
 async function getGoogleDoc(spreadsheetId) {
-  const creds = require('./google-key.json');
+  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY 
+    ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+    : undefined;
+
+  if (!clientEmail || !privateKey) {
+    throw new Error('❌ 缺少必要的環境變數：GOOGLE_CLIENT_EMAIL 或 GOOGLE_PRIVATE_KEY');
+  }
+
   const serviceAccountAuth = new JWT({
-    email: creds.client_email,
-    key: creds.private_key,
+    email: clientEmail,
+    key: privateKey,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
+
   const doc = new GoogleSpreadsheet(spreadsheetId, serviceAccountAuth);
   await doc.loadInfo();
   return doc;
@@ -42,7 +61,7 @@ async function getGoogleDoc(spreadsheetId) {
 async function findNameByEmail(userEmail) {
   try {
     const doc = await getGoogleDoc(MEMBER_SPREADSHEET_ID);
-    const memberSheet = doc.sheetsByTitle['會員名單'] || doc.sheetsByIndex[0]; // 預設拿第一個分頁
+    const memberSheet = doc.sheetsByTitle['會員名單'] || doc.sheetsByIndex[0];
     
     const rows = await memberSheet.getRows();
     const found = rows.find(row => {
@@ -64,13 +83,9 @@ async function findNameByEmail(userEmail) {
 // 📊 試算表寫入邏輯：自動新建日期分頁並寫入【球敘報名總表】
 async function saveToGoogleSheet(dateStr, userEmail, status) {
   try {
-    // 1. 先去第一個試算表查姓名
     const userName = await findNameByEmail(userEmail);
-
-    // 2. 開啟第二個試算表（報名總表）
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
     
-    // 3. 檢查是否已有該日期的分頁，若無則新建
     let sheet = doc.sheetsByTitle[dateStr];
     if (!sheet) {
       sheet = await doc.addSheet({ 
@@ -79,7 +94,6 @@ async function saveToGoogleSheet(dateStr, userEmail, status) {
       });
     }
 
-    // 4. 寫入報名資料
     const nowStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
     await sheet.addRow({
       '報名時間': nowStr,
@@ -88,7 +102,6 @@ async function saveToGoogleSheet(dateStr, userEmail, status) {
       '報名狀態': status
     });
 
-    // 5. 管理分頁：永遠只顯示「最新 2 次」的分頁，自動隱藏舊分頁
     const allSheets = doc.sheetsByIndex;
     const dateSheets = allSheets
       .filter(s => /^\d{4}-\d{1,2}-\d{1,2}$/.test(s.title))
@@ -118,9 +131,14 @@ function getSessionTargetDate(dayOfWeekTarget) {
   return `${nextDate.getFullYear()}-${nextDate.getMonth() + 1}-${nextDate.getDate()}`;
 }
 
-// API: 取得當前場次與名額狀態
+// 🏓 健康檢查接口
+app.get('/ping', (req, res) => {
+  res.status(200).send('PONG');
+});
+
+// API: 取得當前場次與名額狀態（包含自動排序）
 app.get('/api/sessions', (req, res) => {
-  const result = sessions.map(s => {
+  let result = sessions.map(s => {
     const dateStr = getSessionTargetDate(s.day);
     const dateParts = dateStr.split('-');
     const displayDate = `${dateParts[1]}/${dateParts[2]}`;
@@ -130,26 +148,47 @@ app.get('/api/sessions', (req, res) => {
       dateStr: dateStr,
       displayDate: displayDate,
       isOpen: true,
-      remainingSeats: seatsCache[s.id],
-      waitlistCount: waitlistCache[s.id]
+      remainingSeats: seatsCache[s.id] !== undefined ? seatsCache[s.id] : s.limit,
+      waitlistCount: waitlistCache[s.id] !== undefined ? waitlistCache[s.id] : 0
     };
   });
+
+  // 💡 自動依「實際日期」由近到遠排序（例如 8/1 前面、8/3 後面）
+  result.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
+
   res.json(result);
 });
 
 // API: 搶位與候補接口
 app.post('/api/grab', async (req, res) => {
-  const { sessionId, userEmail } = req.body;
+  const { sessionId, token } = req.body;
 
-  if (!sessionId || !userEmail) {
-    return res.status(400).json({ success: false, message: "請填寫 Email！" });
+  if (!sessionId || !token) {
+    return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
+  }
+
+  let userEmail = '';
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    userEmail = payload.email;
+  } catch (authErr) {
+    console.error('❌ Token 驗證失敗：', authErr.message);
+    return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效，請重新登入！" });
   }
 
   const cleanEmail = userEmail.trim().toLowerCase();
   const targetSession = sessions.find(s => s.id === sessionId);
+
+  if (!targetSession) {
+    return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
+  }
+
   const dateStr = getSessionTargetDate(targetSession.day);
 
-  // 1. 防重檢查
   if (registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail)) {
     return res.json({ success: false, message: "❌ 您已經報名過此場次囉！請勿重複送出。" });
   }
@@ -158,7 +197,6 @@ app.post('/api/grab', async (req, res) => {
   let isSuccess = false;
   let resMessage = '';
 
-  // 2. 判斷正取或候補
   if (seatsCache[sessionId] > 0) {
     seatsCache[sessionId] -= 1;
     registeredEmails[sessionId].add(cleanEmail);
@@ -175,7 +213,6 @@ app.post('/api/grab', async (req, res) => {
     return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
   }
 
-  // 3. 異步處理：從會員表比對姓名 $\rightarrow$ 寫入報名表
   saveToGoogleSheet(dateStr, cleanEmail, statusText);
 
   res.json({ 
