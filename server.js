@@ -42,7 +42,7 @@ app.use('/api/', apiLimiter);
 // 💡 球敘場次設定
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
-  { id: "thu", name: "週四匹克球團", day: 4, limit: 1, waitlistLimit: 30 },
+  { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
   { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
 
