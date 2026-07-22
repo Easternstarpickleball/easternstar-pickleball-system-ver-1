@@ -181,7 +181,6 @@
       if (savedToken) {
         try {
           const payload = parseJwt(savedToken);
-          // 💡 檢查 Token 是否過期（預留 10 秒緩衝時間）
           if (payload && payload.exp * 1000 > Date.now() + 10000) {
             userToken = savedToken;
             showLoggedInState(payload.name, payload.email);

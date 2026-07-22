@@ -135,86 +135,61 @@ async function checkMemberStatus(userEmail) {
   }
 }
 
-// 🚦【試算表背景佇列 Queue】
-const sheetQueue = [];
-let isProcessingQueue = false;
+// 🚦【試算表防排隊與全量覆寫 Queue】
+const pendingSyncSessions = new Set();
+let syncTimer = null;
 
-function addToSheetQueue(task) {
-  sheetQueue.push(task);
-  processSheetQueue();
+function triggerSheetSync(sessionId) {
+  pendingSyncSessions.add(sessionId);
+  if (syncTimer) clearTimeout(syncTimer);
+
+  // 防抖機制 (Debounce)：當有變動時，延遲 1 秒再統一全量寫入 Google Sheet
+  syncTimer = setTimeout(processSheetSyncQueue, 1000);
 }
 
-async function processSheetQueue() {
-  if (isProcessingQueue || sheetQueue.length === 0) return;
-  isProcessingQueue = true;
+async function processSheetSyncQueue() {
+  if (pendingSyncSessions.size === 0) return;
 
-  const task = sheetQueue.shift();
+  const sessionIdsToSync = Array.from(pendingSyncSessions);
+  pendingSyncSessions.clear();
 
-  try {
-    if (task.type === 'SAVE') {
-      await saveToGoogleSheetDirectly(task.dateStr, task.userEmail, task.userName, task.status);
-    } else if (task.type === 'REMOVE') {
-      await removeFromGoogleSheetDirectly(task.dateStr, task.userEmail);
+  for (const sessionId of sessionIdsToSync) {
+    const targetSession = sessions.find(s => s.id === sessionId);
+    if (!targetSession) continue;
+
+    const dateStr = getSessionTargetDate(targetSession.day);
+    const attendees = sessionAttendees[sessionId] || [];
+
+    try {
+      console.log(`🔄 正在同步【${targetSession.name} (${dateStr})】最新名單至 Google Sheet (共 ${attendees.length} 筆)...`);
+      const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
+      let sheet = doc.sheetsByTitle[dateStr];
+
+      if (!sheet) {
+        sheet = await doc.addSheet({ 
+          title: dateStr, 
+          headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態'] 
+        });
+      }
+
+      // 清空該工作表所有內容並重新寫入標頭與完整名單
+      await sheet.clear();
+      await sheet.setHeaderRow(['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']);
+
+      if (attendees.length > 0) {
+        const rowsToAdd = attendees.map(a => ({
+          '報名時間': a.timestamp || new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
+          '姓名/暱稱': a.name,
+          'Gmail 帳號': a.email,
+          '報名狀態': a.status
+        }));
+
+        await sheet.addRows(rowsToAdd);
+      }
+      console.log(`✅ 【${targetSession.name}】Google Sheet 全量覆寫同步成功！`);
+    } catch (err) {
+      console.error(`❌ 同步 Google Sheet 失敗 [${sessionId}]：`, err.message);
     }
-  } catch (err) {
-    console.error(`❌ 佇列任務執行失敗 [${task.type}]：`, err.message);
-  } finally {
-    setTimeout(() => {
-      isProcessingQueue = false;
-      processSheetQueue();
-    }, 400);
-  }
-}
-
-// 寫入/更新 Google Sheet 資料
-async function saveToGoogleSheetDirectly(dateStr, userEmail, userName, status) {
-  const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
-  let sheet = doc.sheetsByTitle[dateStr];
-  if (!sheet) {
-    sheet = await doc.addSheet({ 
-      title: dateStr, 
-      headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態'] 
-    });
-  }
-
-  const cleanEmail = userEmail.trim().toLowerCase();
-  const rows = await sheet.getRows();
-  const existingRow = rows.find(r => (r.get('Gmail 帳號') || '').trim().toLowerCase() === cleanEmail);
-
-  const nowStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
-
-  if (existingRow) {
-    // 若該 Email 已經在試算表中存在，直接更新狀態（例如將「候補」更新為「正取」）
-    existingRow.set('報名狀態', status);
-    existingRow.set('報名時間', nowStr);
-    await existingRow.save();
-    console.log(`📝 已在 Google Sheet 更新【${userName}】狀態為：${status}`);
-  } else {
-    // 否則直接新增一列資料
-    await sheet.addRow({
-      '報名時間': nowStr,
-      '姓名/暱稱': userName,
-      'Gmail 帳號': cleanEmail,
-      '報名狀態': status
-    });
-    console.log(`➕ 已新增【${userName}】至 Google Sheet (${status})`);
-  }
-}
-
-// 精準刪除取消者的列
-async function removeFromGoogleSheetDirectly(dateStr, userEmail) {
-  const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
-  const sheet = doc.sheetsByTitle[dateStr];
-  if (!sheet) return;
-
-  const rows = await sheet.getRows();
-  const cleanEmail = userEmail.trim().toLowerCase();
-  
-  // 找出該 Gmail 的列並精準刪除
-  const targetRows = rows.filter(row => (row.get('Gmail 帳號') || '').trim().toLowerCase() === cleanEmail);
-  for (const row of targetRows) {
-    await row.delete();
-    console.log(`🗑️ 已成功從 Google Sheet 刪除資料：${cleanEmail}`);
   }
 }
 
@@ -240,6 +215,7 @@ async function reloadFromSheet() {
           const email = (row.get('Gmail 帳號') || '').trim().toLowerCase();
           const name = row.get('姓名/暱稱') || '未具名';
           const status = row.get('報名狀態') || '正取';
+          const time = row.get('報名時間') || '';
 
           if (email && !registeredEmails[s.id].has(email)) {
             registeredEmails[s.id].add(email);
@@ -253,7 +229,8 @@ async function reloadFromSheet() {
             sessionAttendees[s.id].push({
               name: name,
               email: email,
-              status: status
+              status: status,
+              timestamp: time
             });
           }
         });
@@ -407,19 +384,16 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
   }
 
+  const nowStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
   sessionAttendees[sessionId].push({
     name: finalUserName,
     email: cleanEmail,
-    status: statusText
+    status: statusText,
+    timestamp: nowStr
   });
 
-  addToSheetQueue({
-    type: 'SAVE',
-    dateStr: dateStr,
-    userEmail: cleanEmail,
-    userName: finalUserName,
-    status: statusText
-  });
+  // 觸發全量覆寫同步
+  triggerSheetSync(sessionId);
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
     name: a.name,
@@ -436,7 +410,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   });
 });
 
-// API: 取消報名 (徹底刪除取消者列 + 自動將候補改為正取)
+// API: 取消報名 (記憶體精準處理 + Google Sheet 覆寫同步)
 app.post('/api/cancel', async (req, res) => {
   const { sessionId, token } = req.body;
   if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
@@ -457,24 +431,13 @@ app.post('/api/cancel', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
   }
 
-  const dateStr = getSessionTargetDate(targetSession.day);
-
-  // 1. 清除記憶體中的 Email 紀錄
+  // 1. 清除記憶體中的 Email 紀錄與名單
   registeredEmails[sessionId].delete(cleanEmail);
-
-  // 2. 清除記憶體名單中的資料
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
-
-  // 3. 直接在 Google Sheet 刪除取消者的資料列
-  addToSheetQueue({
-    type: 'REMOVE',
-    dateStr: dateStr,
-    userEmail: cleanEmail
-  });
 
   let promotedNotice = "";
 
-  // 4. 自動遞補候補人員
+  // 2. 自動遞補候補人員
   if (waitlistCache[sessionId] > 0) {
     waitlistCache[sessionId] -= 1; // 候補總數減 1
 
@@ -483,15 +446,6 @@ app.post('/api/cancel', async (req, res) => {
     if (promotedUser) {
       promotedUser.status = '正取';
       promotedNotice = ` (已自動將候補第一位【${promotedUser.name}】遞補為正取！)`;
-
-      // 同步把這位遞補者在 Google Sheet 的狀態改寫為「正取」
-      addToSheetQueue({
-        type: 'SAVE',
-        dateStr: dateStr,
-        userEmail: promotedUser.email,
-        userName: promotedUser.name,
-        status: '正取'
-      });
     }
 
     // 重編其餘候補者的序號文字
@@ -507,6 +461,9 @@ app.post('/api/cancel', async (req, res) => {
     // 沒有候補人員時，直接空出一個正取名額
     seatsCache[sessionId] += 1;
   }
+
+  // 3. 觸發全量覆寫同步至 Google Sheet
+  triggerSheetSync(sessionId);
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
     name: a.name,
