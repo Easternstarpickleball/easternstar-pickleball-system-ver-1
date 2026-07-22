@@ -146,7 +146,6 @@ function triggerSheetSync(sessionId) {
   pendingSyncSessions.add(sessionId);
   if (syncTimer) clearTimeout(syncTimer);
 
-  // 防抖機制 (Debounce)：當有變動時，延遲 1 秒再統一全量寫入 Google Sheet
   syncTimer = setTimeout(processSheetSyncQueue, 1000);
 }
 
@@ -175,7 +174,6 @@ async function processSheetSyncQueue() {
         });
       }
 
-      // 清空該工作表所有內容並重新寫入標頭與完整名單
       await sheet.clear();
       await sheet.setHeaderRow(['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']);
 
@@ -220,17 +218,10 @@ async function reloadFromSheet() {
           let statusRaw = row.get('報名狀態') || '正取';
           const time = row.get('報名時間') || '';
 
-          // 濾掉純文字中可能帶有的 (會員) / (非會員) 備註
           let cleanStatus = statusRaw.replace(/\(會員\)|\(非會員\)/g, '').trim();
 
           if (email && !registeredEmails[s.id].has(email)) {
             registeredEmails[s.id].add(email);
-            
-            if (cleanStatus.includes('候補')) {
-              waitlistCache[s.id] += 1;
-            } else if (cleanStatus === '正取') {
-              if (seatsCache[s.id] > 0) seatsCache[s.id] -= 1;
-            }
 
             const memberInfo = await checkMemberStatus(email);
 
@@ -243,6 +234,9 @@ async function reloadFromSheet() {
             });
           }
         }
+
+        // 重新依據名額計算正取/候補
+        recalculateSessionStatus(s.id);
       }
     }
     console.log('✅ 試算表資料成功同步至記憶體！');
@@ -250,6 +244,29 @@ async function reloadFromSheet() {
     console.error('❌ 重載試算表失敗：', err.message);
     throw err;
   }
+}
+
+// ⚙️ 核心輔助函式：全量重新計算狀態與剩餘名額
+function recalculateSessionStatus(sessionId) {
+  const targetSession = sessions.find(s => s.id === sessionId);
+  if (!targetSession) return;
+
+  const list = sessionAttendees[sessionId] || [];
+  let currentSeatsUsed = 0;
+  let currentWaitlistCount = 0;
+
+  list.forEach((user, idx) => {
+    if (idx < targetSession.limit) {
+      user.status = '正取';
+      currentSeatsUsed++;
+    } else {
+      currentWaitlistCount++;
+      user.status = `候補第 ${currentWaitlistCount} 位`;
+    }
+  });
+
+  seatsCache[sessionId] = targetSession.limit - currentSeatsUsed;
+  waitlistCache[sessionId] = currentWaitlistCount;
 }
 
 function getSessionTargetDate(dayOfWeekTarget) {
@@ -376,34 +393,29 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     return res.json({ success: false, message: "❌ 您已經報名過此場次囉！請勿重複送出。" });
   }
 
-  let statusText = '';
-  let isSuccess = false;
-  let resMessage = '';
-
-  if (seatsCache[sessionId] > 0) {
-    seatsCache[sessionId] -= 1;
-    registeredEmails[sessionId].add(cleanEmail);
-    statusText = '正取';
-    resMessage = "🎉 搶位成功！已為您保留正取名額！";
-    isSuccess = true;
-  } else if (waitlistCache[sessionId] < targetSession.waitlistLimit) {
-    waitlistCache[sessionId] += 1;
-    registeredEmails[sessionId].add(cleanEmail);
-    statusText = `候補第 ${waitlistCache[sessionId]} 位`;
-    resMessage = `⚠️ 正取已滿！已成功為您登記為【候補第 ${waitlistCache[sessionId]} 位】！`;
-    isSuccess = true;
-  } else {
+  if (sessionAttendees[sessionId].length >= targetSession.limit + targetSession.waitlistLimit) {
     return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
   }
 
+  registeredEmails[sessionId].add(cleanEmail);
+  
   const nowStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
   sessionAttendees[sessionId].push({
     name: finalUserName,
     email: cleanEmail,
-    status: statusText,
+    status: '', // 會在下方點算時重新指定
     isMember: memberInfo.isMember,
     timestamp: nowStr
   });
+
+  // 🛠️ 重新統一計算所有人狀態
+  recalculateSessionStatus(sessionId);
+
+  const myRecord = sessionAttendees[sessionId].find(a => a.email === cleanEmail);
+  const isSuccess = true;
+  const resMessage = myRecord.status === '正取' 
+    ? "🎉 搶位成功！已為您保留正取名額！" 
+    : `⚠️ 正取已滿！已成功為您登記為【${myRecord.status}】！`;
 
   triggerSheetSync(sessionId);
 
@@ -423,7 +435,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   });
 });
 
-// API: 取消報名
+// API: 取消報名 (🛠️ 修正邏輯缺陷)
 app.post('/api/cancel', async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
@@ -448,31 +460,12 @@ app.post('/api/cancel', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
   }
 
+  // 1. 移除此人
   registeredEmails[sessionId].delete(cleanEmail);
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
 
-  let promotedNotice = "";
-
-  if (waitlistCache[sessionId] > 0) {
-    waitlistCache[sessionId] -= 1;
-
-    const promotedUser = sessionAttendees[sessionId].find(a => a.status.includes('候補'));
-    if (promotedUser) {
-      promotedUser.status = '正取';
-      promotedNotice = ` (已自動將候補第一位【${promotedUser.name}】遞補為正取！)`;
-    }
-
-    let currentWaitlistIndex = 1;
-    sessionAttendees[sessionId].forEach(a => {
-      if (a.status.includes('候補')) {
-        a.status = `候補第 ${currentWaitlistIndex} 位`;
-        currentWaitlistIndex++;
-      }
-    });
-
-  } else if (seatsCache[sessionId] < targetSession.limit) {
-    seatsCache[sessionId] += 1;
-  }
+  // 2. 🛠️ 重新計算所有人的正取與候補名次 (自動處理補位與順移)
+  recalculateSessionStatus(sessionId);
 
   triggerSheetSync(sessionId);
 
@@ -485,7 +478,7 @@ app.post('/api/cancel', async (req, res) => {
 
   res.json({ 
     success: true, 
-    message: `🗑️ 已成功取消報名！${promotedNotice}`,
+    message: `🗑️ 已成功取消報名！系統已自動更新名次遞補。`,
     remainingSeats: seatsCache[sessionId],
     waitlistCount: waitlistCache[sessionId],
     attendees: sanitizedAttendees
@@ -528,26 +521,19 @@ app.post('/api/admin/add-user', async (req, res) => {
 
   const memberInfo = await checkMemberStatus(cleanEmail);
 
-  let statusText = '';
-  if (seatsCache[sessionId] > 0) {
-    seatsCache[sessionId] -= 1;
-    statusText = '正取';
-  } else {
-    waitlistCache[sessionId] += 1;
-    statusText = `候補第 ${waitlistCache[sessionId]} 位`;
-  }
-
   registeredEmails[sessionId].add(cleanEmail);
   sessionAttendees[sessionId].push({
     name: name.trim(),
     email: cleanEmail,
-    status: statusText,
+    status: '',
     isMember: memberInfo.isMember,
     timestamp: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
   });
 
+  recalculateSessionStatus(sessionId);
+
   triggerSheetSync(sessionId);
-  res.json({ success: true, message: `✅ 已手動新增【${name}】為 ${statusText}！` });
+  res.json({ success: true, message: `✅ 已成功手動新增【${name}】！` });
 });
 
 // API: 手動刪除球友
@@ -567,21 +553,7 @@ app.post('/api/admin/remove-user', async (req, res) => {
   registeredEmails[sessionId].delete(cleanEmail);
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
 
-  if (waitlistCache[sessionId] > 0) {
-    waitlistCache[sessionId] -= 1;
-    const promotedUser = sessionAttendees[sessionId].find(a => a.status.includes('候補'));
-    if (promotedUser) promotedUser.status = '正取';
-
-    let index = 1;
-    sessionAttendees[sessionId].forEach(a => {
-      if (a.status.includes('候補')) {
-        a.status = `候補第 ${index} 位`;
-        index++;
-      }
-    });
-  } else if (seatsCache[sessionId] < sessions.find(s => s.id === sessionId).limit) {
-    seatsCache[sessionId] += 1;
-  }
+  recalculateSessionStatus(sessionId);
 
   triggerSheetSync(sessionId);
   res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
@@ -615,21 +587,7 @@ app.post('/api/admin/reorder-user', async (req, res) => {
   const [movedUser] = list.splice(currentIndex, 1);
   list.splice(targetIndex, 0, movedUser);
 
-  let currentSeatsUsed = 0;
-  let currentWaitlistCount = 0;
-
-  list.forEach((user, idx) => {
-    if (idx < targetSession.limit) {
-      user.status = '正取';
-      currentSeatsUsed++;
-    } else {
-      currentWaitlistCount++;
-      user.status = `候補第 ${currentWaitlistCount} 位`;
-    }
-  });
-
-  seatsCache[sessionId] = targetSession.limit - currentSeatsUsed;
-  waitlistCache[sessionId] = currentWaitlistCount;
+  recalculateSessionStatus(sessionId);
 
   triggerSheetSync(sessionId);
 
