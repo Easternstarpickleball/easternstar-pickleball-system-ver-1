@@ -65,8 +65,8 @@
 
     .btn-submit { background-color: #ff4757; color: white; border: none; padding: 15px 30px; font-size: 22px; font-weight: bold; border-radius: 10px; cursor: pointer; width: 100%; box-shadow: 0 4px 10px rgba(255, 71, 87, 0.4); margin-top: 15px; }
     .btn-submit:disabled { background: #b2bec3; box-shadow: none; cursor: not-allowed; }
-    .user-info { background: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 8px; margin: 15px 0; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-    .btn-logout { background: #ff7675; color: white; border: none; padding: 4px 8px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+    .user-info { background: #e3f2fd; color: #0d47a1; padding: 10px 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; display: flex; justify-content: space-between; align-items: center; word-break: break-all; text-align: left; }
+    .btn-logout { background: #ff7675; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; white-space: nowrap; margin-left: 10px; }
   </style>
 </head>
 <body>
@@ -139,11 +139,12 @@
       startPolling();
     }
 
+    // 💡 已修改：同時將 name 與 email 寫入顯示區塊
     function showLoggedInState(name, email) {
       document.getElementById('auth-box').style.display = 'none';
       const profileBox = document.getElementById('user-profile');
       profileBox.style.display = 'flex';
-      document.getElementById('user-profile-text').innerText = `👤 ${name}`;
+      document.getElementById('user-profile-text').innerText = `👤 ${name} (${email})`;
     }
 
     function logout() {
