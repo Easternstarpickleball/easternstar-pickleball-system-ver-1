@@ -27,13 +27,15 @@ app.use(express.static(path.join(__dirname, '/')));
 // 🔒 防刷機制 (Rate Limiter)
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, 
-  max: 30, 
+  max: 100, // 💡 可稍微放寬全域 API 限制
+  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret', // 👈 壓測自動跳過
   message: { success: false, message: "⚠️ 請求過於頻繁，請稍後再試！" }
 });
 
 const grabLimiter = rateLimit({
   windowMs: 10 * 1000, 
   max: 100, 
+  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret', // 👈 壓測自動跳過
   message: { success: false, message: "⚠️ 搶位太快囉，請勿點擊過快！" }
 });
 
