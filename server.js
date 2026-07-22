@@ -20,8 +20,9 @@ const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
   { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
-  { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
-  { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
+  { id: "thu", name: "週四匹克球團", day: 4, limit: 2, waitlistLimit: 30 },
+  { id: "sat", name: "週六匹克球團", day: 6, limit: 1, waitlistLimit: 30 },
+  { id: "sun", name: "週日匹克球團", day: 0, limit: 36, waitlistLimit: 30 }
 ];
 
 // 初始化快取
