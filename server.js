@@ -196,13 +196,12 @@ async function processSheetSyncQueue() {
   }
 }
 
-// 🔄 重載試算表至記憶體 (強化版)
+// 🔄 重載試算表至記憶體 (完美保存會員身分修正版)
 async function reloadFromSheet() {
   try {
     console.log('🔄 正在從 Google 報名試算表重載資料至記憶體...');
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
 
-    // 1. 先清空本地快取
     sessions.forEach(s => {
       seatsCache[s.id] = s.limit;
       waitlistCache[s.id] = 0;
@@ -211,22 +210,18 @@ async function reloadFromSheet() {
     });
 
     for (const s of sessions) {
-      const dateStr = getSessionTargetDate(s.day); // 例如 "2026-7-28"
+      const dateStr = getSessionTargetDate(s.day);
       
-      // 💡 嘗試比對多種可能頁籤名稱（避免格式差異導致找不到）
       let sheet = doc.sheetsByTitle[dateStr];
       if (!sheet) {
-        // 嘗試換成斜線格式 2026/7/28
         const altDateStr = dateStr.replace(/-/g, '/');
         sheet = doc.sheetsByTitle[altDateStr];
       }
 
       if (sheet) {
         const rows = await sheet.getRows();
-        console.log(`📄 找到頁籤【${sheet.title}】，讀取到 ${rows.length} 筆紀錄...`);
 
         for (const row of rows) {
-          // 💡 相容多種 Email 欄位名稱
           const email = (
             row.get('Gmail 帳號') || 
             row.get('Email') || 
@@ -235,39 +230,42 @@ async function reloadFromSheet() {
             ''
           ).trim().toLowerCase();
 
-          // 💡 相容多種姓名欄位名稱
           const name = row.get('姓名/暱稱') || row.get('姓名') || row.get('暱稱') || '已登記球友';
           let statusRaw = row.get('報名狀態') || '正取';
           const time = row.get('報名時間') || '';
 
+          // 💡 核心修正 1：從原本的標籤判斷是不是會員
+          const isMemberFromSheet = statusRaw.includes('(會員)');
+
+          // 清理掉狀態文字裡的 (會員) 或 (非會員) 括號
           let cleanStatus = statusRaw.replace(/\(會員\)|\(非會員\)/g, '').trim();
 
-          // 如果有抓到資料 (即使沒有 Email，也發放虛擬 ID 防止漏掉)
           const effectiveEmail = email || `no_email_${Math.random()}`;
 
           if (!registeredEmails[s.id].has(effectiveEmail)) {
             registeredEmails[s.id].add(effectiveEmail);
 
-            const memberInfo = email ? await checkMemberStatus(email) : { isMember: false };
+            // 💡 核心修正 2：優先採用試算表上記錄的身分；若未記錄再向會員庫比對
+            let isMemberFinal = isMemberFromSheet;
+            if (!isMemberFromSheet && email) {
+              const checkResult = await checkMemberStatus(email);
+              isMemberFinal = checkResult.isMember;
+            }
 
             sessionAttendees[s.id].push({
               name: name,
               email: effectiveEmail,
               status: cleanStatus,
-              isMember: memberInfo.isMember,
+              isMember: isMemberFinal, // 🔑 完美保留會員身分！
               timestamp: time
             });
           }
         }
 
-        // 重新計算此場次的正取/候補與剩餘名額
         recalculateSessionStatus(s.id);
-        console.log(`✅ 【${s.name}】載入完成！剩餘名額：${seatsCache[s.id]}，候補：${waitlistCache[s.id]}`);
-      } else {
-        console.log(`⚠️ 找不到日期頁籤【${dateStr}】，該場次暫無試算表資料。`);
       }
     }
-    console.log('✅ 試算表資料已成功重載並重新計算完成！');
+    console.log('✅ 試算表資料已成功重載，會員身分已完整維護！');
   } catch (err) {
     console.error('❌ 重載試算表失敗：', err.message);
     throw err;
