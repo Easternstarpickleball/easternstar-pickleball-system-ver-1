@@ -388,6 +388,7 @@ app.get('/api/sessions', async (req, res) => {
       openTimeStr: openTimeNotice,
       openTimeStrEn: openTimeNoticeEn, // 👈 回傳英文提示
       isUserRegistered: isUserRegistered,
+    }
   });
 
   result.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
