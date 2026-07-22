@@ -10,6 +10,9 @@ const PORT = process.env.PORT || 3000;
 // 💡 Render 部署必備：信任 Proxy 以取得真實 User IP
 app.set('trust proxy', 1);
 
+// 🔒 全域系統開關 (預設為 true 開放中)
+let isSystemActive = true;
+
 // 🔒 環境變數載入
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
@@ -271,9 +274,7 @@ app.get('/api/sessions', async (req, res) => {
       userEmail = ticket.getPayload().email.trim().toLowerCase();
       const memberInfo = await checkMemberStatus(userEmail);
       isUserMember = memberInfo.isMember;
-      console.log(`👤 驗證使用者: ${userEmail} | 是否為會員: ${isUserMember}`);
     } catch (e) {
-      console.error(`⚠️ Token 驗證異常: ${e.message}`);
       isUserMember = false;
     }
   }
@@ -324,6 +325,10 @@ app.get('/api/sessions', async (req, res) => {
 
 // API: 搶位與候補
 app.post('/api/grab', grabLimiter, async (req, res) => {
+  if (!isSystemActive) {
+    return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
+  }
+
   const { sessionId, token, customName } = req.body;
   if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
 
@@ -392,7 +397,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     timestamp: nowStr
   });
 
-  // 觸發全量覆寫同步
   triggerSheetSync(sessionId);
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
@@ -410,8 +414,12 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   });
 });
 
-// API: 取消報名 (記憶體精準處理 + Google Sheet 覆寫同步)
+// API: 取消報名
 app.post('/api/cancel', async (req, res) => {
+  if (!isSystemActive) {
+    return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
+  }
+
   const { sessionId, token } = req.body;
   if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
 
@@ -431,24 +439,20 @@ app.post('/api/cancel', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
   }
 
-  // 1. 清除記憶體中的 Email 紀錄與名單
   registeredEmails[sessionId].delete(cleanEmail);
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
 
   let promotedNotice = "";
 
-  // 2. 自動遞補候補人員
   if (waitlistCache[sessionId] > 0) {
-    waitlistCache[sessionId] -= 1; // 候補總數減 1
+    waitlistCache[sessionId] -= 1;
 
-    // 找到候補第一位
     const promotedUser = sessionAttendees[sessionId].find(a => a.status.includes('候補'));
     if (promotedUser) {
       promotedUser.status = '正取';
       promotedNotice = ` (已自動將候補第一位【${promotedUser.name}】遞補為正取！)`;
     }
 
-    // 重編其餘候補者的序號文字
     let currentWaitlistIndex = 1;
     sessionAttendees[sessionId].forEach(a => {
       if (a.status.includes('候補')) {
@@ -458,11 +462,9 @@ app.post('/api/cancel', async (req, res) => {
     });
 
   } else if (seatsCache[sessionId] < targetSession.limit) {
-    // 沒有候補人員時，直接空出一個正取名額
     seatsCache[sessionId] += 1;
   }
 
-  // 3. 觸發全量覆寫同步至 Google Sheet
   triggerSheetSync(sessionId);
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
@@ -480,11 +482,103 @@ app.post('/api/cancel', async (req, res) => {
   });
 });
 
-// API: 管理員同步
+// --- 🛠️ 管理員專用 API 區塊 ---
+
+// API: 切換暫停/開放
+app.post('/api/admin/toggle-pause', async (req, res) => {
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== ADMIN_SECRET) {
+    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
+  }
+
+  isSystemActive = !isSystemActive;
+  const statusStr = isSystemActive ? "🟢 系統已恢復開放" : "🔴 系統已暫停（維護中）";
+  res.json({ success: true, message: `操作成功！目前狀態：${statusStr}` });
+});
+
+// API: 手動新增球友
+app.post('/api/admin/add-user', async (req, res) => {
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== ADMIN_SECRET) {
+    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
+  }
+
+  const { sessionId, name, email } = req.body;
+  if (!sessionId || !name || !email) {
+    return res.status(400).json({ success: false, message: "❌ 欄位填寫不完整！" });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const targetSession = sessions.find(s => s.id === sessionId);
+  if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到場次！" });
+
+  if (registeredEmails[sessionId].has(cleanEmail)) {
+    return res.json({ success: false, message: "⚠️ 該球友已經在名單中了！" });
+  }
+
+  let statusText = '';
+  if (seatsCache[sessionId] > 0) {
+    seatsCache[sessionId] -= 1;
+    statusText = '正取';
+  } else {
+    waitlistCache[sessionId] += 1;
+    statusText = `候補第 ${waitlistCache[sessionId]} 位`;
+  }
+
+  registeredEmails[sessionId].add(cleanEmail);
+  sessionAttendees[sessionId].push({
+    name: name.trim(),
+    email: cleanEmail,
+    status: statusText,
+    timestamp: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+  });
+
+  triggerSheetSync(sessionId);
+  res.json({ success: true, message: `✅ 已手動新增【${name}】為 ${statusText}！` });
+});
+
+// API: 手動刪除球友
+app.post('/api/admin/remove-user', async (req, res) => {
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== ADMIN_SECRET) {
+    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
+  }
+
+  const { sessionId, email } = req.body;
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (!registeredEmails[sessionId] || !registeredEmails[sessionId].has(cleanEmail)) {
+    return res.json({ success: false, message: "⚠️ 名單中找不到該 Email！" });
+  }
+
+  registeredEmails[sessionId].delete(cleanEmail);
+  sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
+
+  if (waitlistCache[sessionId] > 0) {
+    waitlistCache[sessionId] -= 1;
+    const promotedUser = sessionAttendees[sessionId].find(a => a.status.includes('候補'));
+    if (promotedUser) promotedUser.status = '正取';
+
+    let index = 1;
+    sessionAttendees[sessionId].forEach(a => {
+      if (a.status.includes('候補')) {
+        a.status = `候補第 ${index} 位`;
+        index++;
+      }
+    });
+  } else if (seatsCache[sessionId] < sessions.find(s => s.id === sessionId).limit) {
+    seatsCache[sessionId] += 1;
+  }
+
+  triggerSheetSync(sessionId);
+  res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
+});
+
+// API: 強制重載
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) {
-    return res.status(403).json({ success: false, message: "❌ 權限不足或暗號錯誤！" });
+    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
   }
 
   try {

@@ -109,8 +109,10 @@
     .status-tag.waitlist { background-color: #fef7e0; color: #b06000; }
     .empty-text { color: #888; font-size: 13px; font-style: italic; margin: 5px 0; text-align: center; }
 
-    .admin-bar { margin-top: 25px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #888; }
-    .btn-admin-sync { background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 5px; }
+    .admin-bar { margin-top: 25px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+    .admin-btn-group { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
+    .btn-admin-action { background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; transition: background 0.2s; }
+    .btn-admin-action:hover { background: #495057; }
   </style>
 </head>
 <body>
@@ -165,8 +167,13 @@
     </div>
 
     <div class="admin-bar">
-      <span>管理員工具：</span>
-      <button class="btn-admin-sync" onclick="triggerAdminSync()">🔄 強制同步試算表名單</button>
+      <span>🛠️ 管理員工具箱：</span>
+      <div class="admin-btn-group">
+        <button class="btn-admin-action" onclick="adminTogglePause()">⏸️ 切換暫停/開放</button>
+        <button class="btn-admin-action" onclick="adminAddUser()">➕ 手動新增球友</button>
+        <button class="btn-admin-action" onclick="adminRemoveUser()">❌ 手動刪除球友</button>
+        <button class="btn-admin-action" onclick="triggerAdminSync()">🔄 強制同步試算表</button>
+      </div>
     </div>
   </div>
 
@@ -362,7 +369,7 @@
         grabBtn.innerText = `✅ 已完成報名`;
       } else {
         grabBtn.disabled = false;
-        grabBtn.innerText = session.remainingSeats > 0 ? `🔥 領域展開（報名）` : `⚠️ 搶候補位`;
+        grabBtn.innerText = session.remainingSeats > 0 ? `🔥 立刻報名（正取）` : `⚠️ 搶候補位`;
       }
 
       if (session.isUserRegistered) {
@@ -459,6 +466,68 @@
       } catch (err) {
         alert('❌ 取消失敗，請確認網路連線。');
         cancelBtn.disabled = false;
+      }
+    }
+
+    // --- 管理員專用功能 ---
+    async function adminTogglePause() {
+      const secret = prompt("請輸入管理員暗號：");
+      if (!secret) return;
+
+      try {
+        const res = await fetch('/api/admin/toggle-pause', {
+          method: 'POST',
+          headers: { 'x-admin-secret': secret }
+        });
+        const data = await res.json();
+        alert(data.message);
+      } catch (e) {
+        alert("❌ 操作失敗，請檢查伺服器連線。");
+      }
+    }
+
+    async function adminAddUser() {
+      if (!selectedSession) return alert("請先在上方點擊選擇場次！");
+      const secret = prompt("請輸入管理員暗號：");
+      if (!secret) return;
+
+      const name = prompt("請輸入球友姓名：");
+      const email = prompt("請輸入球友 Email：");
+      if (!name || !email) return alert("姓名與 Email 皆為必填！");
+
+      try {
+        const res = await fetch('/api/admin/add-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+          body: JSON.stringify({ sessionId: selectedSession.id, name, email })
+        });
+        const data = await res.json();
+        alert(data.message);
+        if (data.success) loadSessions();
+      } catch (e) {
+        alert("❌ 新增失敗！");
+      }
+    }
+
+    async function adminRemoveUser() {
+      if (!selectedSession) return alert("請先在上方點擊選擇場次！");
+      const secret = prompt("請輸入管理員暗號：");
+      if (!secret) return;
+
+      const email = prompt("請輸入要刪除的球友 Email：");
+      if (!email) return;
+
+      try {
+        const res = await fetch('/api/admin/remove-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+          body: JSON.stringify({ sessionId: selectedSession.id, email })
+        });
+        const data = await res.json();
+        alert(data.message);
+        if (data.success) loadSessions();
+      } catch (e) {
+        alert("❌ 刪除失敗！");
       }
     }
 
