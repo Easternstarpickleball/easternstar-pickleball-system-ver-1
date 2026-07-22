@@ -19,7 +19,7 @@ const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
 // 💡 球敘場次設定 (1=週一, 2=週二, 3=週三, 4=週四, 5=週五, 6=週六, 0=週日)
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
-  { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
+  // { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
   { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
   { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
@@ -71,7 +71,6 @@ async function getGoogleDoc(spreadsheetId) {
 
 // 🔄 更新會員名單快取
 async function refreshMemberCache() {
-  // 💡 強制將目前時間轉為台灣時間
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) {
     return;
@@ -114,7 +113,7 @@ async function checkMemberStatus(userEmail) {
   }
 }
 
-// 📊 寫入試算表
+// 📊 寫入報名資料至試算表
 async function saveToGoogleSheet(dateStr, userEmail, userName, status) {
   try {
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
@@ -135,6 +134,7 @@ async function saveToGoogleSheet(dateStr, userEmail, userName, status) {
       '報名狀態': status
     });
 
+    // 保持最新兩頁顯示，其餘隱藏
     const allSheets = doc.sheetsByIndex;
     const dateSheets = allSheets
       .filter(s => /^\d{4}-\d{1,2}-\d{1,2}$/.test(s.title))
@@ -152,9 +152,30 @@ async function saveToGoogleSheet(dateStr, userEmail, userName, status) {
   }
 }
 
-// 計算活動日期輔助函式（修正：補上 today 的宣告）
+// 🗑️ 從試算表中直接刪除取消報名的紀錄
+async function removeFromGoogleSheet(dateStr, userEmail) {
+  try {
+    const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
+    const sheet = doc.sheetsByTitle[dateStr];
+    
+    if (!sheet) return; // 如果找不到對應日期的工作表直接結束
+
+    const rows = await sheet.getRows();
+    const cleanEmail = userEmail.trim().toLowerCase();
+
+    // 尋找符合該 Email 的那一行並進行刪除
+    const targetRow = rows.find(row => (row.get('Gmail 帳號') || '').trim().toLowerCase() === cleanEmail);
+    if (targetRow) {
+      await targetRow.delete();
+      console.log(`🗑️ 已成功從試算表 [${dateStr}] 刪除報名紀錄：${userEmail}`);
+    }
+  } catch (err) {
+    console.error('❌ 從試算表刪除紀錄失敗：', err.message);
+  }
+}
+
+// 計算活動日期輔助函式
 function getSessionTargetDate(dayOfWeekTarget) {
-  // 💡 強制將目前時間轉為台灣時間並作為基準
   const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const dayOfWeek = today.getDay();
   let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
@@ -274,7 +295,6 @@ app.post('/api/grab', async (req, res) => {
 
   const memberInfo = await checkMemberStatus(cleanEmail);
   
-  // 名字判斷：會員帶入試算表名字，非會員帶入輸入框名字
   let finalUserName = memberInfo.userName;
   if (!memberInfo.isMember) {
     if (!customName || customName.trim() === '') {
@@ -330,6 +350,7 @@ app.post('/api/grab', async (req, res) => {
     return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
   }
 
+  // 非同步寫入試算表
   saveToGoogleSheet(dateStr, cleanEmail, finalUserName, statusText);
 
   res.json({ 
@@ -371,6 +392,7 @@ app.post('/api/cancel', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
   }
 
+  // 從記憶體快取移除與釋出名額
   registeredEmails[sessionId].delete(cleanEmail);
 
   if (waitlistCache[sessionId] > 0) {
@@ -379,9 +401,10 @@ app.post('/api/cancel', async (req, res) => {
     seatsCache[sessionId] += 1;
   }
 
-  const memberInfo = await checkMemberStatus(cleanEmail);
   const dateStr = getSessionTargetDate(targetSession.day);
-  saveToGoogleSheet(dateStr, cleanEmail, memberInfo.userName, '已取消');
+  
+  // 💡 直接從 Google 試算表中刪除該使用者的這筆紀錄
+  removeFromGoogleSheet(dateStr, cleanEmail);
 
   res.json({ 
     success: true, 
