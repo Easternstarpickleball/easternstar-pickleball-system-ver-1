@@ -147,7 +147,9 @@ app.get('/ping', (req, res) => {
 
 // API: 取得場次（包含：前一天 18:00 會員開放 / 22:00 非會員開放）
 app.get('/api/sessions', async (req, res) => {
-  const now = new Date();
+  // const now = new Date();
+  // ✅ 改成：假裝現在是 2026 年底（時間絕對超越所有開放時間）
+  const now = new Date('2026-12-31T20:00:00');
   const token = req.query.token;
 
   let isUserMember = false;
@@ -175,7 +177,7 @@ app.get('/api/sessions', async (req, res) => {
     
     const memberOpenTime = new Date(targetDate);
     memberOpenTime.setDate(targetDate.getDate() - 1);
-    memberOpenTime.setHours(15, 0, 0, 0); // 前一天 18:00
+    memberOpenTime.setHours(18, 0, 0, 0); // 前一天 18:00
 
     const nonMemberOpenTime = new Date(targetDate);
     nonMemberOpenTime.setDate(targetDate.getDate() - 1);
