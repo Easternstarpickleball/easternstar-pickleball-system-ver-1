@@ -58,7 +58,7 @@ sessions.forEach(s => {
 
 let memberMapCache = new Map();
 let lastFetchTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 分鐘快取
 
 // 🔒 輔助函式：Email 脫敏
 function maskEmail(email) {
@@ -90,7 +90,7 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔄 更新會員名單快取
+// 🔄 更新會員名單快取 (強化版：擴充欄位比對與 Log)
 async function refreshMemberCache() {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) return;
@@ -103,14 +103,22 @@ async function refreshMemberCache() {
 
     const newMap = new Map();
     rows.forEach(row => {
-      const email = (row.get('Gmail 帳號') || row.get('Email') || '').trim().toLowerCase();
-      const name = row.get('姓名') || row.get('姓名/暱稱') || '已登記會員';
+      // 💡 支援更多常見的 Email 欄位名稱
+      const email = (
+        row.get('Gmail 帳號') || 
+        row.get('Email') || 
+        row.get('電子郵件') || 
+        row.get('Gmail') || 
+        ''
+      ).trim().toLowerCase();
+
+      const name = row.get('姓名') || row.get('姓名/暱稱') || row.get('暱稱') || '已登記會員';
       if (email) newMap.set(email, name);
     });
 
     memberMapCache = newMap;
     lastFetchTime = now;
-    console.log(`✅ 會員快取更新完成！共 ${memberMapCache.size} 筆會員。`);
+    console.log(`✅ 會員快取更新完成！共抓取到 ${memberMapCache.size} 筆會員資料。`);
   } catch (err) {
     console.error('❌ 更新會員名單失敗：', err.message);
   }
@@ -250,10 +258,10 @@ function getSessionTargetDate(dayOfWeekTarget) {
   return `${nextDate.getFullYear()}-${nextDate.getMonth() + 1}-${nextDate.getDate()}`;
 }
 
-// 健康檢查 Endpoint (適合給 UptimeRobot 監控避免休眠)
+// 健康檢查 Endpoint
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次
+// API: 取得場次 (含詳細除錯 Log)
 app.get('/api/sessions', async (req, res) => {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const token = req.query.token;
@@ -267,7 +275,9 @@ app.get('/api/sessions', async (req, res) => {
       userEmail = ticket.getPayload().email.trim().toLowerCase();
       const memberInfo = await checkMemberStatus(userEmail);
       isUserMember = memberInfo.isMember;
+      console.log(`👤 驗證使用者: ${userEmail} | 是否為會員: ${isUserMember}`);
     } catch (e) {
+      console.error(`⚠️ Token 驗證異常: ${e.message}`);
       isUserMember = false;
     }
   }
@@ -460,7 +470,7 @@ app.post('/api/cancel', async (req, res) => {
   });
 });
 
-// API: 管理員同步
+// API: 管理員同步 (使用 POST + Header 暗號)
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) {
