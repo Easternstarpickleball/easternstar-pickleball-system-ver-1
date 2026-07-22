@@ -21,7 +21,7 @@
       --theme-fri: linear-gradient(135deg, #d8a48f, #bc7d63);
       --theme-sat: linear-gradient(135deg, #e6b89c, #cd853f);
       --theme-sun: linear-gradient(135deg, #805ad5, #6b46c1);
-      --theme-default: linear-gradient(135deg, #708090, #4a5568);
+      --theme-default: linear-gradient(135deg, #2b4c7e, #132238);
     }
 
     body { 
@@ -51,12 +51,9 @@
     }
 
     /* 📌 頂部 Banner */
-    /* 💡 你的 Banner 區塊樣式 */
     .header-banner {
       padding: 22px 15px;
       border-radius: 16px;
-      /* 這裡設定成深藍色/海軍藍漸層 */
-      background: linear-gradient(135deg, #2b4c7e, #132238);
       color: white;
       margin-bottom: 20px;
       transition: all 0.4s ease;
@@ -133,15 +130,15 @@
       box-shadow: 0 8px 20px rgba(0,0,0,0.18) !important;
     }
 
-    /* 各天別主題色（套用莫蘭迪色系） */
-    .theme-mon { background: var(--theme-mon); }
-    .theme-tue { background: var(--theme-tue); }
-    .theme-wed { background: var(--theme-wed); }
-    .theme-thu { background: var(--theme-thu); }
-    .theme-fri { background: var(--theme-fri); }
-    .theme-sat { background: var(--theme-sat); }
-    .theme-sun { background: var(--theme-sun); }
-    .theme-default { background: var(--theme-default); }
+    /* 各天別主題色（加上 !important 確保 Banner 與按鈕順利換色） */
+    .theme-mon { background: var(--theme-mon) !important; }
+    .theme-tue { background: var(--theme-tue) !important; }
+    .theme-wed { background: var(--theme-wed) !important; }
+    .theme-thu { background: var(--theme-thu) !important; }
+    .theme-fri { background: var(--theme-fri) !important; }
+    .theme-sat { background: var(--theme-sat) !important; }
+    .theme-sun { background: var(--theme-sun) !important; }
+    .theme-default { background: var(--theme-default) !important; }
 
     /* 🚀 操作按鈕群組 */
     .action-btn-group { display: flex; gap: 12px; margin-top: 20px; }
@@ -294,7 +291,7 @@
     <div class="card">
       
       <div id="main-banner" class="header-banner theme-default">
-        <h1 id="event-title" data-i18n="appTitle">匹克球搶位系統</h1>
+        <h1 id="event-title" data-i18n="appTitle">匹克球團搶位系統</h1>
         <div id="event-date" class="date-sub" data-i18n="selectSessionHint">請點選下方場次卡片</div>
       </div>
 
@@ -400,7 +397,7 @@
       }
     }
 
-    // 🌐 雙語字典檔 (已加入溫馨提醒字典)
+    // 🌐 雙語字典檔
     const i18n = {
       zh: {
         appTitle: "匹克球團搶位系統",
@@ -621,6 +618,7 @@
           const btn = document.createElement('button');
           const isSelected = selectedSession && selectedSession.id === s.id;
           btn.className = `session-btn theme-${prefix} ${isSelected ? 'selected' : ''}`;
+          btn.dataset.id = s.id;
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
 
@@ -646,6 +644,7 @@
           }
           btnContainer.appendChild(btn);
 
+          // 當目前被選中的場次資料在輪詢被更新時，同步更新面板資訊
           if (isSelected) {
             selectedSession = s; 
             updateSeatsDisplay(s);
@@ -659,18 +658,29 @@
       }
     }
 
+    // 💡 點擊場次時的處理邏輯：即時更換 Banner 顏色與資訊
     function selectSession(session) {
       selectedSession = session;
       const prefix = getDayPrefix(session);
       const sessionTitle = (currentLang === 'en' && session.nameEn) ? session.nameEn : session.name;
 
+      // 1. 更換頂部 Banner 的顏色主題 class
       const banner = document.getElementById('main-banner');
       banner.className = `header-banner theme-${prefix}`;
       document.getElementById('event-title').innerText = sessionTitle;
       document.getElementById('event-date').innerText = `📅 ${session.displayDate}`;
 
-      loadSessions();
+      // 2. 更新下方選取場次按鈕的高亮外框 (selected class)
+      const buttons = document.querySelectorAll('.session-btn');
+      buttons.forEach(btn => {
+        if (btn.dataset.id === session.id) {
+          btn.classList.add('selected');
+        } else {
+          btn.classList.remove('selected');
+        }
+      });
 
+      // 3. 更新名額資訊、報名按鈕狀態與名單
       updateSeatsDisplay(session);
       updateActionButtons(session);
 
