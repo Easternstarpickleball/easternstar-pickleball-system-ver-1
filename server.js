@@ -27,15 +27,15 @@ app.use(express.static(path.join(__dirname, '/')));
 // 🔒 防刷機制 (Rate Limiter)
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, 
-  max: 100, // 💡 可稍微放寬全域 API 限制
-  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret', // 👈 壓測自動跳過
+  max: 100, 
+  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret', // 壓測跳過
   message: { success: false, message: "⚠️ 請求過於頻繁，請稍後再試！" }
 });
 
 const grabLimiter = rateLimit({
   windowMs: 10 * 1000, 
   max: 100, 
-  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret', // 👈 壓測自動跳過
+  skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret', // 壓測跳過
   message: { success: false, message: "⚠️ 搶位太快囉，請勿點擊過快！" }
 });
 
@@ -44,7 +44,7 @@ app.use('/api/', apiLimiter);
 // 💡 球敘場次設定
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
-  { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
+  { id: "thu", name: "週四匹克球團", day: 4, limit: 1, waitlistLimit: 30 },
   { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
 
@@ -196,7 +196,7 @@ async function processSheetSyncQueue() {
   }
 }
 
-// 🔄 重載試算表至記憶體 (修復重複報名防護漏洞版)
+// 🔄 重載試算表至記憶體
 async function reloadFromSheet() {
   try {
     console.log('🔄 正在從 Google 報名試算表重載資料至記憶體...');
@@ -222,7 +222,6 @@ async function reloadFromSheet() {
         const rows = await sheet.getRows();
 
         for (const row of rows) {
-          // 💡 廣泛匹配各種可能的 Email 欄位名稱
           const email = (
             row.get('Gmail 帳號') || 
             row.get('Gmail帳號') || 
@@ -239,14 +238,11 @@ async function reloadFromSheet() {
           const isMemberFromSheet = statusRaw.includes('(會員)');
           let cleanStatus = statusRaw.replace(/\(會員\)|\(非會員\)/g, '').trim();
 
-          // 🔑 只有有真實 Email 的才放進防重複鎖（如果是無 Email 資料則建立備用 ID）
           const attendeeEmail = email || `anonymous_${Math.random()}`;
 
-          // 防止試算表本身有重複資料被重複載入
           const alreadyLoaded = sessionAttendees[s.id].some(a => a.email === attendeeEmail && email !== '');
 
           if (!alreadyLoaded) {
-            // 🔒 只要有 Email，就一定要加入防重複對照集！
             if (email) {
               registeredEmails[s.id].add(email);
             }
@@ -270,14 +266,14 @@ async function reloadFromSheet() {
         recalculateSessionStatus(s.id);
       }
     }
-    console.log('✅ 試算表資料成功同步至記憶體，防重複報名機制已鎖定！');
+    console.log('✅ 試算表資料成功同步至記憶體！');
   } catch (err) {
     console.error('❌ 重載試算表失敗：', err.message);
     throw err;
   }
 }
 
-// ⚙️ 核心輔助函式：全量重新計算狀態與遞補順序
+// ⚙️ 核心輔助函式：全量重新計算狀態與剩餘名額
 function recalculateSessionStatus(sessionId) {
   const targetSession = sessions.find(s => s.id === sessionId);
   if (!targetSession) return;
@@ -314,7 +310,7 @@ function getSessionTargetDate(dayOfWeekTarget) {
 // 健康檢查 Endpoint
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次名單
+// API: 取得場次 (含當天 18:00 截止邏輯，名單依然公開)
 app.get('/api/sessions', async (req, res) => {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const token = req.query.token;
@@ -339,18 +335,32 @@ app.get('/api/sessions', async (req, res) => {
     const displayDate = `${dateParts[1]}/${dateParts[2]}`;
     const targetDate = new Date(dateStr);
     
+    // 會員開放時間：前一天 18:00
     const memberOpenTime = new Date(targetDate);
     memberOpenTime.setDate(targetDate.getDate() - 1);
     memberOpenTime.setHours(18, 0, 0, 0);
 
+    // 非會員開放時間：前一天 22:00
     const nonMemberOpenTime = new Date(targetDate);
     nonMemberOpenTime.setDate(targetDate.getDate() - 1);
     nonMemberOpenTime.setHours(22, 0, 0, 0);
 
-    let isOpen = isUserMember ? (now >= memberOpenTime) : (now >= nonMemberOpenTime);
-    let openTimeNotice = isUserMember 
-      ? `${memberOpenTime.getMonth() + 1}/${memberOpenTime.getDate()} 18:00 (會員開放)`
-      : `${nonMemberOpenTime.getMonth() + 1}/${nonMemberOpenTime.getDate()} 22:00 (非會員開放)`;
+    // 💡 截止報名時間：球敘當天 18:00
+    const closeTime = new Date(targetDate);
+    closeTime.setHours(18, 0, 0, 0);
+
+    let isAfterOpen = isUserMember ? (now >= memberOpenTime) : (now >= nonMemberOpenTime);
+    let isBeforeClose = now < closeTime;
+    let isOpen = isAfterOpen && isBeforeClose;
+
+    let openTimeNotice = "";
+    if (now >= closeTime) {
+      openTimeNotice = "⏰ 本場次已於 18:00 截止報名";
+    } else {
+      openTimeNotice = isUserMember 
+        ? `${memberOpenTime.getMonth() + 1}/${memberOpenTime.getDate()} 18:00 開放 (當天18:00截止)`
+        : `${nonMemberOpenTime.getMonth() + 1}/${nonMemberOpenTime.getDate()} 22:00 開放 (當天18:00截止)`;
+    }
 
     const isUserRegistered = userEmail ? (registeredEmails[s.id] && registeredEmails[s.id].has(userEmail)) : false;
 
@@ -370,7 +380,7 @@ app.get('/api/sessions', async (req, res) => {
       isUserRegistered: isUserRegistered,
       remainingSeats: seatsCache[s.id] !== undefined ? seatsCache[s.id] : s.limit,
       waitlistCount: waitlistCache[s.id] !== undefined ? waitlistCache[s.id] : 0,
-      attendees: sanitizedAttendees
+      attendees: sanitizedAttendees // 名單保持公開傳回
     };
   });
 
@@ -378,15 +388,27 @@ app.get('/api/sessions', async (req, res) => {
   res.json({ isMember: isUserMember, sessions: result });
 });
 
-// API: 搶位與候補 (含壓測驗證邏輯)
+// API: 搶位與候補 (含當天 18:00 後端截止防護)
 app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
   }
 
   const { sessionId, token, customName } = req.body;
-  
-  // 💡 壓測 Bypass 檢查
+  const targetSession = sessions.find(s => s.id === sessionId);
+  if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
+
+  // 💡 後端時間關卡：超過當天 18:00 拒絕報名
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const dateStr = getSessionTargetDate(targetSession.day);
+  const closeTime = new Date(dateStr);
+  closeTime.setHours(18, 0, 0, 0);
+
+  if (now >= closeTime) {
+    return res.json({ success: false, message: "⏰ 該場次已於當天 18:00 截止報名，無法再送出報名！" });
+  }
+
+  // 壓測 Bypass 檢查
   const isStressTest = req.headers['x-stress-test'] === 'pickleball-test-secret';
 
   let userEmail = '';
@@ -408,8 +430,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   }
 
   const cleanEmail = userEmail.trim().toLowerCase();
-  const targetSession = sessions.find(s => s.id === sessionId);
-  if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
 
   let finalUserName = memberInfo.userName;
   if (!memberInfo.isMember && !isStressTest) {
@@ -419,18 +439,17 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     finalUserName = customName.trim();
   }
 
-  // 🔒 雙重防線：檢查 Set 集合 OR 檢查名單陣列中是否已有此 Email
+  // 🔒 雙重防線防重複報名
   const isAlreadyRegisteredInSet = registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail);
   const isAlreadyInList = sessionAttendees[sessionId] && sessionAttendees[sessionId].some(a => a.email.toLowerCase() === cleanEmail);
 
   if (isAlreadyRegisteredInSet || isAlreadyInList) {
-  // 補強：確保 Set 裡面有這個 Email
-  registeredEmails[sessionId].add(cleanEmail);
-  return res.json({ success: false, message: "❌ 您已經報名過此場次囉！請勿重複送出。" });
+    registeredEmails[sessionId].add(cleanEmail);
+    return res.json({ success: false, message: "❌ 您已經報名過此場次囉！請勿重複送出。" });
   }
 
   if (sessionAttendees[sessionId].length >= targetSession.limit + targetSession.waitlistLimit) {
-    return res.json({ success: false, message: "❌ 額滿了！正取名額(36位)與候補名額(30位)皆已填滿！" });
+    return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
   }
 
   registeredEmails[sessionId].add(cleanEmail);
@@ -470,7 +489,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   });
 });
 
-// API: 取消報名 (自動遞補)
+// API: 取消報名
 app.post('/api/cancel', async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
