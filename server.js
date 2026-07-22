@@ -35,16 +35,25 @@ sessions.forEach(s => {
   registeredEmails[s.id] = new Set();
 });
 
-// 🔑 取得指定的 Google 試算表物件
+// 🔑 取得指定的 Google 試算表物件（解析 GOOGLE_JSON_KEY）
 async function getGoogleDoc(spreadsheetId) {
-  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY 
-    ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-    : undefined;
+  const jsonKeyString = process.env.GOOGLE_JSON_KEY;
 
-  if (!clientEmail || !privateKey) {
-    throw new Error('❌ 缺少必要的環境變數：GOOGLE_CLIENT_EMAIL 或 GOOGLE_PRIVATE_KEY');
+  if (!jsonKeyString) {
+    throw new Error('❌ 缺少必要的環境變數：GOOGLE_JSON_KEY');
   }
+
+  let creds;
+  try {
+    // 💡 將 Render 裡面的 JSON 字串轉成物件
+    creds = JSON.parse(jsonKeyString);
+  } catch (err) {
+    throw new Error('❌ GOOGLE_JSON_KEY 格式解析失敗，請確認 Render 內的值為正確的 JSON 格式！');
+  }
+
+  const clientEmail = creds.client_email;
+  // 處理可能包含的換行符號
+  const privateKey = creds.private_key ? creds.private_key.replace(/\\n/g, '\n') : undefined;
 
   const serviceAccountAuth = new JWT({
     email: clientEmail,
