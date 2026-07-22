@@ -278,11 +278,12 @@
       attendees.forEach((item, index) => {
         const isWaitlist = item.status.includes('候補');
         const tagClass = isWaitlist ? 'waitlist' : 'success';
+        const memberTag = item.isMember ? ' (會員)' : ' (非會員)';
 
         html += `
           <div class="attendee-item">
             <span class="attendee-name">${index + 1}. ${item.name}</span>
-            <span class="status-tag ${tagClass}">${item.status}</span>
+            <span class="status-tag ${tagClass}">${item.status}${memberTag}</span>
           </div>
         `;
       });

@@ -184,7 +184,7 @@ async function processSheetSyncQueue() {
           '報名時間': a.timestamp || new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
           '姓名/暱稱': a.name,
           'Gmail 帳號': a.email,
-          '報名狀態': a.status
+          '報名狀態': `${a.status} (${a.isMember ? '會員' : '非會員'})`
         }));
 
         await sheet.addRows(rowsToAdd);
@@ -214,29 +214,35 @@ async function reloadFromSheet() {
       const sheet = doc.sheetsByTitle[dateStr];
       if (sheet) {
         const rows = await sheet.getRows();
-        rows.forEach(row => {
+        for (const row of rows) {
           const email = (row.get('Gmail 帳號') || '').trim().toLowerCase();
           const name = row.get('姓名/暱稱') || '未具名';
-          const status = row.get('報名狀態') || '正取';
+          let statusRaw = row.get('報名狀態') || '正取';
           const time = row.get('報名時間') || '';
+
+          // 濾掉純文字中可能帶有的 (會員) / (非會員) 備註
+          let cleanStatus = statusRaw.replace(/\(會員\)|\(非會員\)/g, '').trim();
 
           if (email && !registeredEmails[s.id].has(email)) {
             registeredEmails[s.id].add(email);
             
-            if (status.includes('候補')) {
+            if (cleanStatus.includes('候補')) {
               waitlistCache[s.id] += 1;
-            } else if (status === '正取') {
+            } else if (cleanStatus === '正取') {
               if (seatsCache[s.id] > 0) seatsCache[s.id] -= 1;
             }
+
+            const memberInfo = await checkMemberStatus(email);
 
             sessionAttendees[s.id].push({
               name: name,
               email: email,
-              status: status,
+              status: cleanStatus,
+              isMember: memberInfo.isMember,
               timestamp: time
             });
           }
-        });
+        }
       }
     }
     console.log('✅ 試算表資料成功同步至記憶體！');
@@ -303,7 +309,8 @@ app.get('/api/sessions', async (req, res) => {
     const sanitizedAttendees = (sessionAttendees[s.id] || []).map(a => ({
       name: a.name,
       email: maskEmail(a.email),
-      status: a.status
+      status: a.status,
+      isMember: a.isMember
     }));
 
     return {
@@ -394,6 +401,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     name: finalUserName,
     email: cleanEmail,
     status: statusText,
+    isMember: memberInfo.isMember,
     timestamp: nowStr
   });
 
@@ -402,7 +410,8 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
     name: a.name,
     email: maskEmail(a.email),
-    status: a.status
+    status: a.status,
+    isMember: a.isMember
   }));
 
   res.json({ 
@@ -470,7 +479,8 @@ app.post('/api/cancel', async (req, res) => {
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
     name: a.name,
     email: maskEmail(a.email),
-    status: a.status
+    status: a.status,
+    isMember: a.isMember
   }));
 
   res.json({ 
@@ -516,6 +526,8 @@ app.post('/api/admin/add-user', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 該球友已經在名單中了！" });
   }
 
+  const memberInfo = await checkMemberStatus(cleanEmail);
+
   let statusText = '';
   if (seatsCache[sessionId] > 0) {
     seatsCache[sessionId] -= 1;
@@ -530,6 +542,7 @@ app.post('/api/admin/add-user', async (req, res) => {
     name: name.trim(),
     email: cleanEmail,
     status: statusText,
+    isMember: memberInfo.isMember,
     timestamp: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
   });
 
@@ -599,11 +612,9 @@ app.post('/api/admin/reorder-user', async (req, res) => {
     return res.json({ success: false, message: `❌ 位置不合法！請輸入 1 到 ${list.length} 之間的數字。` });
   }
 
-  // 從舊位置拔出並插入新位置
   const [movedUser] = list.splice(currentIndex, 1);
   list.splice(targetIndex, 0, movedUser);
 
-  // 重新從頭掃描編排 status
   let currentSeatsUsed = 0;
   let currentWaitlistCount = 0;
 
@@ -617,11 +628,9 @@ app.post('/api/admin/reorder-user', async (req, res) => {
     }
   });
 
-  // 更新快取
   seatsCache[sessionId] = targetSession.limit - currentSeatsUsed;
   waitlistCache[sessionId] = currentWaitlistCount;
 
-  // 全量覆寫 Google Sheet
   triggerSheetSync(sessionId);
 
   res.json({ 
