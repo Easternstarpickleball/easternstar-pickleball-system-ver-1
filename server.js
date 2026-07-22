@@ -33,7 +33,7 @@ const apiLimiter = rateLimit({
 
 const grabLimiter = rateLimit({
   windowMs: 10 * 1000, 
-  max: 100, // 💡 若壓測時頻率較高，可適度提高限額
+  max: 100, 
   message: { success: false, message: "⚠️ 搶位太快囉，請勿點擊過快！" }
 });
 
@@ -245,7 +245,7 @@ async function reloadFromSheet() {
   }
 }
 
-// ⚙️ 核心輔助函式：全量重新計算狀態與剩餘名額
+// ⚙️ 核心輔助函式：全量重新計算狀態與遞補順序
 function recalculateSessionStatus(sessionId) {
   const targetSession = sessions.find(s => s.id === sessionId);
   if (!targetSession) return;
@@ -282,7 +282,7 @@ function getSessionTargetDate(dayOfWeekTarget) {
 // 健康檢查 Endpoint
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次
+// API: 取得場次名單
 app.get('/api/sessions', async (req, res) => {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const token = req.query.token;
@@ -346,7 +346,7 @@ app.get('/api/sessions', async (req, res) => {
   res.json({ isMember: isUserMember, sessions: result });
 });
 
-// API: 搶位與候補 (支援壓測 bypass)
+// API: 搶位與候補 (含壓測驗證邏輯)
 app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
@@ -354,18 +354,16 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
 
   const { sessionId, token, customName } = req.body;
   
-  // 💡 檢查是否有壓力測試暗號
+  // 💡 壓測 Bypass 檢查
   const isStressTest = req.headers['x-stress-test'] === 'pickleball-test-secret';
 
   let userEmail = '';
   let memberInfo = { isMember: false, userName: '測試球友' };
 
   if (isStressTest) {
-    // 🧪 壓測模式：使用模擬 Email
     userEmail = req.body.testEmail || `test_user_${Math.random()}@test.com`;
     memberInfo.userName = customName || '壓測測試員';
   } else {
-    // 🔒 正式模式：需驗證 Google Token
     if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
 
     try {
@@ -434,7 +432,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   });
 });
 
-// API: 取消報名
+// API: 取消報名 (自動遞補)
 app.post('/api/cancel', async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
