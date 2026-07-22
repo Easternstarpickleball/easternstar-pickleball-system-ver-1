@@ -16,12 +16,12 @@ app.use(express.static(path.join(__dirname, '/')));
 const MEMBER_SPREADSHEET_ID = '1j-KMHvmPIuIziymLE_85G6gCbrZyHzj9CgQeevjels0';
 const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
 
-// 💡 球敘場次設定：只需要寫星期幾，開放時間由程式統一計算
+// 💡 球敘場次設定 (1=週一, 2=週二, 3=週三, 4=週四, 5=週五, 6=週六, 0=週日)
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
-  { id: "wed", name: "週三匹克球團", day: 3, limit: 1, waitlistLimit: 30 },
+  { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
   { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
-  { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
+  { id: "sat", name: "週六匹克球團", day: 6, limit: 1, waitlistLimit: 30 }
 ];
 
 // 初始化快取
@@ -35,7 +35,12 @@ sessions.forEach(s => {
   registeredEmails[s.id] = new Set();
 });
 
-// 🔑 取得 Google 試算表物件（讀取 GOOGLE_JSON_KEY）
+// 🚀 全域會員名單記憶體快取 (避免觸發 Google API 429 流量限制)
+let memberMapCache = new Map();
+let lastFetchTime = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 快取有效期限：5 分鐘
+
+// 🔑 取得 Google 試算表物件 (讀取 Render 環境變數 GOOGLE_JSON_KEY)
 async function getGoogleDoc(spreadsheetId) {
   const jsonKeyString = process.env.GOOGLE_JSON_KEY;
 
@@ -64,29 +69,47 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔍 搜尋會員姓名，並回傳是否為會員 (isMember: true/false)
+// 🔄 定期更新會員名單快取
+async function refreshMemberCache() {
+  const now = Date.now();
+  if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) {
+    return; // 5 分鐘內使用記憶體快取，不請求 Google API
+  }
+
+  try {
+    console.log('🔄 正在從 Google 試算表更新會員名單快取...');
+    const doc = await getGoogleDoc(MEMBER_SPREADSHEET_ID);
+    const memberSheet = doc.sheetsByTitle['會員名單'] || doc.sheetsByIndex[0];
+    const rows = await memberSheet.getRows();
+
+    const newMap = new Map();
+    rows.forEach(row => {
+      const email = (row.get('Gmail 帳號') || row.get('Email') || '').trim().toLowerCase();
+      const name = row.get('姓名') || row.get('姓名/暱稱') || '已登記會員';
+      if (email) {
+        newMap.set(email, name);
+      }
+    });
+
+    memberMapCache = newMap;
+    lastFetchTime = now;
+    console.log(`✅ 會員名單快取更新完成！共 ${memberMapCache.size} 筆會員資料。`);
+  } catch (err) {
+    console.error('❌ 更新會員名單快取失敗：', err.message);
+  }
+}
+
+// 🔍 快速比對會員身分 (0 延遲，不耗費 Google 限額)
 async function checkMemberStatus(userEmail) {
   if (!userEmail) return { isMember: false, userName: '非會員 / 未登記' };
 
-  try {
-    const doc = await getGoogleDoc(MEMBER_SPREADSHEET_ID);
-    const memberSheet = doc.sheetsByTitle['會員名單'] || doc.sheetsByIndex[0];
-    
-    const rows = await memberSheet.getRows();
-    const found = rows.find(row => {
-      const emailInSheet = row.get('Gmail 帳號') || row.get('Email') || '';
-      return emailInSheet.trim().toLowerCase() === userEmail.trim().toLowerCase();
-    });
+  await refreshMemberCache();
 
-    if (found) {
-      const userName = found.get('姓名') || found.get('姓名/暱稱') || '已登記會員';
-      return { isMember: true, userName: userName };
-    } else {
-      return { isMember: false, userName: '非會員 / 未登記' };
-    }
-  } catch (err) {
-    console.error('❌ 查詢會員資料庫失敗：', err.message);
-    return { isMember: false, userName: '查無姓名' };
+  const cleanEmail = userEmail.trim().toLowerCase();
+  if (memberMapCache.has(cleanEmail)) {
+    return { isMember: true, userName: memberMapCache.get(cleanEmail) };
+  } else {
+    return { isMember: false, userName: '非會員 / 未登記' };
   }
 }
 
@@ -145,10 +168,9 @@ app.get('/ping', (req, res) => {
   res.status(200).send('PONG');
 });
 
-// API: 取得場次（包含：前一天 18:00 會員開放 / 22:00 非會員開放）
+// API: 取得場次 (包含開放時間比對與自動排序)
 app.get('/api/sessions', async (req, res) => {
   // const now = new Date();
-  // ✅ 改成：假裝現在是 2026 年底（時間絕對超越所有開放時間）
   const now = new Date('2026-12-31T20:00:00');
   const token = req.query.token;
 
@@ -172,29 +194,26 @@ app.get('/api/sessions', async (req, res) => {
     const dateParts = dateStr.split('-');
     const displayDate = `${dateParts[1]}/${dateParts[2]}`;
 
-    // 💡 1. 算出前一天的 18:00 (會員) 與 22:00 (非會員)
+    // 計算開放時間：前一天 18:00 (會員) / 前一天 22:00 (非會員)
     const targetDate = new Date(dateStr);
     
     const memberOpenTime = new Date(targetDate);
     memberOpenTime.setDate(targetDate.getDate() - 1);
-    memberOpenTime.setHours(18, 0, 0, 0); // 前一天 18:00
+    memberOpenTime.setHours(18, 0, 0, 0);
 
     const nonMemberOpenTime = new Date(targetDate);
     nonMemberOpenTime.setDate(targetDate.getDate() - 1);
-    nonMemberOpenTime.setHours(22, 0, 0, 0); // 前一天 22:00
+    nonMemberOpenTime.setHours(22, 0, 0, 0);
 
-    // 💡 2. 判斷當前使用者是否到達開放時間
     let isOpen = false;
     let openTimeNotice = "";
 
     if (isUserMember) {
-      // 會員判斷：是否到了前一天 18:00
       isOpen = now >= memberOpenTime;
       const m = memberOpenTime.getMonth() + 1;
       const d = memberOpenTime.getDate();
       openTimeNotice = `${m}/${d} 18:00 (會員開放)`;
     } else {
-      // 非會員判斷：是否到了前一天 22:00
       isOpen = now >= nonMemberOpenTime;
       const m = nonMemberOpenTime.getMonth() + 1;
       const d = nonMemberOpenTime.getDate();
@@ -243,15 +262,14 @@ app.post('/api/grab', async (req, res) => {
     return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
   }
 
-  // 🔒 雙重驗證：檢查權限與開放時間
   const memberInfo = await checkMemberStatus(cleanEmail);
   const dateStr = getSessionTargetDate(targetSession.day);
   const targetDate = new Date(dateStr);
   // const now = new Date();
   const now = new Date('2026-12-31T20:00:00');
 
+  // 🔒 開放時間安全檢查
   if (memberInfo.isMember) {
-    // 會員：檢查是否到了前一天 18:00
     const memberOpenTime = new Date(targetDate);
     memberOpenTime.setDate(targetDate.getDate() - 1);
     memberOpenTime.setHours(18, 0, 0, 0);
@@ -260,7 +278,6 @@ app.post('/api/grab', async (req, res) => {
       return res.json({ success: false, message: "🔒 會員報名時間未到！（前一天 18:00 開放）" });
     }
   } else {
-    // 非會員：檢查是否到了前一天 22:00
     const nonMemberOpenTime = new Date(targetDate);
     nonMemberOpenTime.setDate(targetDate.getDate() - 1);
     nonMemberOpenTime.setHours(22, 0, 0, 0);
