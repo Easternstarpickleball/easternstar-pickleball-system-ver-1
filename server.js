@@ -247,7 +247,8 @@ app.post('/api/grab', async (req, res) => {
   const memberInfo = await checkMemberStatus(cleanEmail);
   const dateStr = getSessionTargetDate(targetSession.day);
   const targetDate = new Date(dateStr);
-  const now = new Date();
+  // const now = new Date();
+  const now = new Date('2026-12-31T20:00:00');
 
   if (memberInfo.isMember) {
     // 會員：檢查是否到了前一天 18:00
