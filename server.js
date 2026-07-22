@@ -170,9 +170,9 @@ app.get('/ping', (req, res) => {
 });
 
 // API: 取得場次
+// API: 取得場次
 app.get('/api/sessions', async (req, res) => {
-  // const now = new Date();
-  const now = new Date('2026-12-31T20:00:00');
+  const now = new Date();
   const token = req.query.token;
 
   let isUserMember = false;
@@ -198,7 +198,6 @@ app.get('/api/sessions', async (req, res) => {
     const dateParts = dateStr.split('-');
     const displayDate = `${dateParts[1]}/${dateParts[2]}`;
 
-    // 開放時間：前一天 18:00 (會員) / 前一天 22:00 (非會員)
     const targetDate = new Date(dateStr);
     
     const memberOpenTime = new Date(targetDate);
@@ -232,14 +231,19 @@ app.get('/api/sessions', async (req, res) => {
       displayDate: displayDate,
       isOpen: isOpen,
       openTimeStr: openTimeNotice,
-      isUserRegistered: isUserRegistered, // 💡 回傳使用者是否已報名
+      isUserRegistered: isUserRegistered,
       remainingSeats: seatsCache[s.id] !== undefined ? seatsCache[s.id] : s.limit,
       waitlistCount: waitlistCache[s.id] !== undefined ? waitlistCache[s.id] : 0
     };
   });
 
   result.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
-  res.json(result);
+  
+  // 💡 在 response 包裹層加上 isMember，讓前端可以直接判斷
+  res.json({
+    isMember: isUserMember,
+    sessions: result
+  });
 });
 
 // API: 搶位與候補

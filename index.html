@@ -180,51 +180,60 @@
     }
 
     async function loadSessions() {
-      try {
-        const url = userToken ? `/api/sessions?token=${encodeURIComponent(userToken)}` : '/api/sessions';
-        const res = await fetch(url);
-        const sessions = await res.json();
-        
-        const btnContainer = document.getElementById('session-buttons');
-        btnContainer.innerHTML = '';
+  try {
+    const url = userToken ? `/api/sessions?token=${encodeURIComponent(userToken)}` : '/api/sessions';
+    const res = await fetch(url);
+    const data = await res.json(); // 💡 接收包含 { isMember, sessions } 的資料結構
+    
+    const sessions = data.sessions || [];
+    isCurrentUserMember = data.isMember || false;
 
-        sessions.forEach(s => {
-          const prefix = getDayPrefix(s);
-          
-          // 主場次按鈕
-          const btn = document.createElement('button');
-          btn.className = `session-btn day-${prefix}`;
-          
-          if (s.isOpen) {
-            if (s.remainingSeats > 0) {
-              btn.innerText = `${s.name} (${s.displayDate}) - 剩餘 ${s.remainingSeats} 位`;
-            } else {
-              btn.innerText = `${s.name} (${s.displayDate}) - 候補第 ${s.waitlistCount + 1} 位`;
-            }
-            btn.onclick = () => selectSession(s);
-          } else {
-            btn.innerText = `🔒 ${s.name} (${s.displayDate}) - ${s.openTimeStr}`;
-            btn.disabled = true;
-          }
-          btnContainer.appendChild(btn);
-
-          // 💡 如果已報名，額外顯示「取消報名」按鈕
-          if (s.isUserRegistered) {
-            const cancelBtn = document.createElement('button');
-            cancelBtn.className = 'session-btn btn-cancel';
-            cancelBtn.innerText = `❌ 取消報名：${s.name} (${s.displayDate})`;
-            cancelBtn.onclick = () => cancelGrab(s.id);
-            btnContainer.appendChild(cancelBtn);
-          }
-
-          if (selectedSession && selectedSession.id === s.id) {
-            updateSeatsDisplay(s);
-          }
-        });
-      } catch (err) {
-        document.getElementById('session-buttons').innerText = '❌ 無法連線至伺服器';
-      }
+    // 💡 控制中文大名輸入框：已登入且「非會員」才顯示；會員或未登入一律隱藏！
+    const nameBox = document.getElementById('non-member-name-box');
+    if (userToken && !isCurrentUserMember) {
+      nameBox.style.display = 'block'; // 非會員才看得到
+    } else {
+      nameBox.style.display = 'none';  // 會員完全隱藏不顯示
     }
+
+    const btnContainer = document.getElementById('session-buttons');
+    btnContainer.innerHTML = '';
+
+    sessions.forEach(s => {
+      const prefix = getDayPrefix(s);
+      
+      const btn = document.createElement('button');
+      btn.className = `session-btn day-${prefix}`;
+      
+      if (s.isOpen) {
+        if (s.remainingSeats > 0) {
+          btn.innerText = `${s.name} (${s.displayDate}) - 剩餘 ${s.remainingSeats} 位`;
+        } else {
+          btn.innerText = `${s.name} (${s.displayDate}) - 候補第 ${s.waitlistCount + 1} 位`;
+        }
+        btn.onclick = () => selectSession(s);
+      } else {
+        btn.innerText = `🔒 ${s.name} (${s.displayDate}) - ${s.openTimeStr}`;
+        btn.disabled = true;
+      }
+      btnContainer.appendChild(btn);
+
+      if (s.isUserRegistered) {
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'session-btn btn-cancel';
+        cancelBtn.innerText = `❌ 取消報名：${s.name} (${s.displayDate})`;
+        cancelBtn.onclick = () => cancelGrab(s.id);
+        btnContainer.appendChild(cancelBtn);
+      }
+
+      if (selectedSession && selectedSession.id === s.id) {
+        updateSeatsDisplay(s);
+      }
+    });
+  } catch (err) {
+    document.getElementById('session-buttons').innerText = '❌ 無法連線至伺服器';
+  }
+}
 
     function selectSession(session) {
       selectedSession = session;
