@@ -394,7 +394,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   }
 
   if (sessionAttendees[sessionId].length >= targetSession.limit + targetSession.waitlistLimit) {
-    return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
+    return res.json({ success: false, message: "❌ 額滿了！正取名額(36位)與候補名額(30位)皆已填滿！" });
   }
 
   registeredEmails[sessionId].add(cleanEmail);
