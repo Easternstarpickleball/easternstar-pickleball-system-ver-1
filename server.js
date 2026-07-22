@@ -72,7 +72,7 @@ async function getGoogleDoc(spreadsheetId) {
 // 🔄 更新會員名單快取
 async function refreshMemberCache() {
   // 💡 強制將目前時間轉為台灣時間
-const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) {
     return;
   }
