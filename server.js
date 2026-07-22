@@ -19,7 +19,7 @@ const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
 // 💡 球敘場次設定：只需要寫星期幾，開放時間由程式統一計算
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
-  { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
+  { id: "wed", name: "週三匹克球團", day: 3, limit: 1, waitlistLimit: 30 },
   { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
   { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
