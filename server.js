@@ -574,6 +574,62 @@ app.post('/api/admin/remove-user', async (req, res) => {
   res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
 });
 
+// API: 手動調整球友順序
+app.post('/api/admin/reorder-user', async (req, res) => {
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== ADMIN_SECRET) {
+    return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
+  }
+
+  const { sessionId, email, newPosition } = req.body;
+  const cleanEmail = email.trim().toLowerCase();
+  const targetSession = sessions.find(s => s.id === sessionId);
+
+  if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到場次！" });
+  if (!registeredEmails[sessionId] || !registeredEmails[sessionId].has(cleanEmail)) {
+    return res.json({ success: false, message: "⚠️ 名單中找不到該 Email！" });
+  }
+
+  const list = sessionAttendees[sessionId];
+  const currentIndex = list.findIndex(a => a.email === cleanEmail);
+  if (currentIndex === -1) return res.json({ success: false, message: "⚠️ 找不到該球友！" });
+
+  const targetIndex = parseInt(newPosition) - 1;
+  if (isNaN(targetIndex) || targetIndex < 0 || targetIndex >= list.length) {
+    return res.json({ success: false, message: `❌ 位置不合法！請輸入 1 到 ${list.length} 之間的數字。` });
+  }
+
+  // 從舊位置拔出並插入新位置
+  const [movedUser] = list.splice(currentIndex, 1);
+  list.splice(targetIndex, 0, movedUser);
+
+  // 重新從頭掃描編排 status
+  let currentSeatsUsed = 0;
+  let currentWaitlistCount = 0;
+
+  list.forEach((user, idx) => {
+    if (idx < targetSession.limit) {
+      user.status = '正取';
+      currentSeatsUsed++;
+    } else {
+      currentWaitlistCount++;
+      user.status = `候補第 ${currentWaitlistCount} 位`;
+    }
+  });
+
+  // 更新快取
+  seatsCache[sessionId] = targetSession.limit - currentSeatsUsed;
+  waitlistCache[sessionId] = currentWaitlistCount;
+
+  // 全量覆寫 Google Sheet
+  triggerSheetSync(sessionId);
+
+  res.json({ 
+    success: true, 
+    message: `✅ 已成功將【${movedUser.name}】調整至第 ${newPosition} 位！` 
+  });
+});
+
 // API: 強制重載
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];

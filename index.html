@@ -172,6 +172,7 @@
         <button class="btn-admin-action" onclick="adminTogglePause()">⏸️ 切換暫停/開放</button>
         <button class="btn-admin-action" onclick="adminAddUser()">➕ 手動新增球友</button>
         <button class="btn-admin-action" onclick="adminRemoveUser()">❌ 手動刪除球友</button>
+        <button class="btn-admin-action" onclick="adminReorderUser()">↕️ 調整球友順序</button>
         <button class="btn-admin-action" onclick="triggerAdminSync()">🔄 強制同步試算表</button>
       </div>
     </div>
@@ -528,6 +529,31 @@
         if (data.success) loadSessions();
       } catch (e) {
         alert("❌ 刪除失敗！");
+      }
+    }
+
+    async function adminReorderUser() {
+      if (!selectedSession) return alert("請先在上方點擊選擇場次！");
+      const secret = prompt("請輸入管理員暗號：");
+      if (!secret) return;
+
+      const email = prompt("請輸入要移動順序的球友 Email：");
+      if (!email) return;
+
+      const newPosition = prompt("請輸入要移動到的新位置（例如輸入 1 代表移到第一位）：");
+      if (!newPosition) return;
+
+      try {
+        const res = await fetch('/api/admin/reorder-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+          body: JSON.stringify({ sessionId: selectedSession.id, email, newPosition })
+        });
+        const data = await res.json();
+        alert(data.message);
+        if (data.success) loadSessions();
+      } catch (e) {
+        alert("❌ 移動順序失敗，請確認伺服器連線。");
       }
     }
 
