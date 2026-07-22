@@ -15,7 +15,6 @@
     
     .session-btn { display: block; width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; border-radius: 8px; cursor: pointer; color: white; border: none; font-weight: bold; transition: background 0.2s; }
     
-    /* 💡 強制停用按鈕顯示白字 */
     .session-btn:disabled { 
       background: #ccc !important; 
       color: #ffffff !important; 
@@ -30,7 +29,7 @@
     }
     .btn-cancel:hover { background-color: #bd2130 !important; }
     
-    /* 🎨 主題顏色定義 */
+    /* 🎨 主題顏色 */
     .color-mon, .day-mon { color: #6f42c1; }
     .day-mon { background-color: #6f42c1; color: white; }
     .day-mon:hover:not(:disabled) { background-color: #59359a; }
@@ -55,9 +54,9 @@
     .day-sat { background-color: #fd7e14; color: white; }
     .day-sat:hover:not(:disabled) { background-color: #d96302; }
 
-    .color-sun, .day-sun { color: #2e1fcc; }
-    .day-sun { background-color: #2e1fcc; color: white; }
-    .day-sun:hover:not(:disabled) { background-color: #230a8a; }
+    .color-sun, .day-sun { color: #dc3545; }
+    .day-sun { background-color: #dc3545; color: white; }
+    .day-sun:hover:not(:disabled) { background-color: #bd2130; }
 
     .color-default, .day-default { color: #2e7d32; }
     .day-default { background-color: #6c757d; color: white; }
@@ -67,6 +66,10 @@
     .btn-submit:disabled { background: #b2bec3; box-shadow: none; cursor: not-allowed; }
     .user-info { background: #e3f2fd; color: #0d47a1; padding: 10px 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; display: flex; justify-content: space-between; align-items: center; word-break: break-all; text-align: left; }
     .btn-logout { background: #ff7675; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; white-space: nowrap; margin-left: 10px; }
+    
+    .input-box { margin: 15px 0; text-align: left; }
+    .input-box label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
+    .input-box input { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
   </style>
 </head>
 <body>
@@ -93,6 +96,11 @@
       <button class="btn-logout" onclick="logout()">登出</button>
     </div>
 
+    <div id="non-member-name-box" class="input-box" style="display: none;">
+      <label for="custom-name">✍️ 請輸入中文大名：</label>
+      <input type="text" id="custom-name" placeholder="例如：王小明">
+    </div>
+
     <div id="session-selector" class="session-container">
       <h3 style="margin-top:0; color:#333;">📅 場次清單：</h3>
       <div id="session-buttons">載入中...</div>
@@ -105,6 +113,7 @@
     let selectedSession = null;
     let userToken = null;
     let pollInterval = null;
+    let isCurrentUserMember = false;
 
     window.onload = function() {
       const savedToken = localStorage.getItem('pickleball_token');
@@ -139,7 +148,6 @@
       startPolling();
     }
 
-    // 💡 已修改：同時將 name 與 email 寫入顯示區塊
     function showLoggedInState(name, email) {
       document.getElementById('auth-box').style.display = 'none';
       const profileBox = document.getElementById('user-profile');
@@ -180,60 +188,68 @@
     }
 
     async function loadSessions() {
-  try {
-    const url = userToken ? `/api/sessions?token=${encodeURIComponent(userToken)}` : '/api/sessions';
-    const res = await fetch(url);
-    const data = await res.json(); // 💡 接收包含 { isMember, sessions } 的資料結構
-    
-    const sessions = data.sessions || [];
-    isCurrentUserMember = data.isMember || false;
-
-    // 💡 控制中文大名輸入框：已登入且「非會員」才顯示；會員或未登入一律隱藏！
-    const nameBox = document.getElementById('non-member-name-box');
-    if (userToken && !isCurrentUserMember) {
-      nameBox.style.display = 'block'; // 非會員才看得到
-    } else {
-      nameBox.style.display = 'none';  // 會員完全隱藏不顯示
-    }
-
-    const btnContainer = document.getElementById('session-buttons');
-    btnContainer.innerHTML = '';
-
-    sessions.forEach(s => {
-      const prefix = getDayPrefix(s);
-      
-      const btn = document.createElement('button');
-      btn.className = `session-btn day-${prefix}`;
-      
-      if (s.isOpen) {
-        if (s.remainingSeats > 0) {
-          btn.innerText = `${s.name} (${s.displayDate}) - 剩餘 ${s.remainingSeats} 位`;
-        } else {
-          btn.innerText = `${s.name} (${s.displayDate}) - 候補第 ${s.waitlistCount + 1} 位`;
+      try {
+        const url = userToken ? `/api/sessions?token=${encodeURIComponent(userToken)}` : '/api/sessions';
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        // 💡 前後端格式相容處理
+        let sessions = [];
+        if (Array.isArray(data)) {
+          sessions = data;
+        } else if (data && Array.isArray(data.sessions)) {
+          sessions = data.sessions;
+          isCurrentUserMember = data.isMember || false;
         }
-        btn.onclick = () => selectSession(s);
-      } else {
-        btn.innerText = `🔒 ${s.name} (${s.displayDate}) - ${s.openTimeStr}`;
-        btn.disabled = true;
-      }
-      btnContainer.appendChild(btn);
 
-      if (s.isUserRegistered) {
-        const cancelBtn = document.createElement('button');
-        cancelBtn.className = 'session-btn btn-cancel';
-        cancelBtn.innerText = `❌ 取消報名：${s.name} (${s.displayDate})`;
-        cancelBtn.onclick = () => cancelGrab(s.id);
-        btnContainer.appendChild(cancelBtn);
-      }
+        // 💡 控制中文大名輸入框：只在已登入且為「非會員」時顯示
+        const nameBox = document.getElementById('non-member-name-box');
+        if (nameBox) {
+          if (userToken && !isCurrentUserMember) {
+            nameBox.style.display = 'block';
+          } else {
+            nameBox.style.display = 'none';
+          }
+        }
 
-      if (selectedSession && selectedSession.id === s.id) {
-        updateSeatsDisplay(s);
+        const btnContainer = document.getElementById('session-buttons');
+        btnContainer.innerHTML = '';
+
+        sessions.forEach(s => {
+          const prefix = getDayPrefix(s);
+          const btn = document.createElement('button');
+          btn.className = `session-btn day-${prefix}`;
+          
+          if (s.isOpen) {
+            if (s.remainingSeats > 0) {
+              btn.innerText = `${s.name} (${s.displayDate}) - 剩餘 ${s.remainingSeats} 位`;
+            } else {
+              btn.innerText = `${s.name} (${s.displayDate}) - 候補第 ${s.waitlistCount + 1} 位`;
+            }
+            btn.onclick = () => selectSession(s);
+          } else {
+            btn.innerText = `🔒 ${s.name} (${s.displayDate}) - ${s.openTimeStr}`;
+            btn.disabled = true;
+          }
+          btnContainer.appendChild(btn);
+
+          if (s.isUserRegistered) {
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'session-btn btn-cancel';
+            cancelBtn.innerText = `❌ 取消報名：${s.name} (${s.displayDate})`;
+            cancelBtn.onclick = () => cancelGrab(s.id);
+            btnContainer.appendChild(cancelBtn);
+          }
+
+          if (selectedSession && selectedSession.id === s.id) {
+            updateSeatsDisplay(s);
+          }
+        });
+      } catch (err) {
+        console.error("載入失敗：", err);
+        document.getElementById('session-buttons').innerText = '❌ 無法連線至伺服器';
       }
-    });
-  } catch (err) {
-    document.getElementById('session-buttons').innerText = '❌ 無法連線至伺服器';
-  }
-}
+    }
 
     function selectSession(session) {
       selectedSession = session;
@@ -274,6 +290,16 @@
         return;
       }
 
+      let customNameVal = '';
+      if (!isCurrentUserMember) {
+        customNameVal = document.getElementById('custom-name').value.trim();
+        if (!customNameVal) {
+          alert('請輸入您的「中文大名」！');
+          document.getElementById('custom-name').focus();
+          return;
+        }
+      }
+
       const grabBtn = document.getElementById('btn-grab');
       grabBtn.disabled = true;
 
@@ -283,7 +309,8 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId: selectedSession.id,
-            token: userToken
+            token: userToken,
+            customName: customNameVal
           })
         });
 
@@ -301,7 +328,6 @@
       }
     }
 
-    // 💡 取消報名函式
     async function cancelGrab(sessionId) {
       if (!confirm("確定要取消此場次的報名嗎？")) return;
 

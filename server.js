@@ -20,9 +20,8 @@ const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
   { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
-  { id: "thu", name: "週四匹克球團", day: 4, limit: 2, waitlistLimit: 30 },
-  { id: "sat", name: "週六匹克球團", day: 6, limit: 1, waitlistLimit: 30 },
-  { id: "sun", name: "週日匹克球團", day: 0, limit: 36, waitlistLimit: 30 }
+  { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
+  { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
 
 // 初始化快取
@@ -36,12 +35,12 @@ sessions.forEach(s => {
   registeredEmails[s.id] = new Set();
 });
 
-// 🚀 全域會員名單記憶體快取 (防止 Google API 429 流量爆表)
+// 全域會員名單記憶體快取
 let memberMapCache = new Map();
 let lastFetchTime = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 分鐘快取
 
-// 🔑 取得 Google 試算表物件 (讀取 Render 環境變數 GOOGLE_JSON_KEY)
+// 🔑 取得 Google 試算表物件
 async function getGoogleDoc(spreadsheetId) {
   const jsonKeyString = process.env.GOOGLE_JSON_KEY;
 
@@ -70,7 +69,7 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔄 定期更新會員名單快取
+// 🔄 更新會員名單快取
 async function refreshMemberCache() {
   const now = Date.now();
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) {
@@ -100,7 +99,7 @@ async function refreshMemberCache() {
   }
 }
 
-// 🔍 快速比對會員身分 (0 延遲，不耗費 Google API 流量)
+// 🔍 比對會員身分
 async function checkMemberStatus(userEmail) {
   if (!userEmail) return { isMember: false, userName: '非會員 / 未登記' };
 
@@ -114,7 +113,7 @@ async function checkMemberStatus(userEmail) {
   }
 }
 
-// 📊 寫入試算表邏輯
+// 📊 寫入試算表
 async function saveToGoogleSheet(dateStr, userEmail, userName, status) {
   try {
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
@@ -169,7 +168,6 @@ app.get('/ping', (req, res) => {
   res.status(200).send('PONG');
 });
 
-// API: 取得場次
 // API: 取得場次
 app.get('/api/sessions', async (req, res) => {
   const now = new Date();
@@ -239,7 +237,6 @@ app.get('/api/sessions', async (req, res) => {
 
   result.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
   
-  // 💡 在 response 包裹層加上 isMember，讓前端可以直接判斷
   res.json({
     isMember: isUserMember,
     sessions: result
@@ -248,7 +245,7 @@ app.get('/api/sessions', async (req, res) => {
 
 // API: 搶位與候補
 app.post('/api/grab', async (req, res) => {
-  const { sessionId, token } = req.body;
+  const { sessionId, token, customName } = req.body;
 
   if (!sessionId || !token) {
     return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
@@ -274,12 +271,21 @@ app.post('/api/grab', async (req, res) => {
   }
 
   const memberInfo = await checkMemberStatus(cleanEmail);
+  
+  // 名字判斷：會員帶入試算表名字，非會員帶入輸入框名字
+  let finalUserName = memberInfo.userName;
+  if (!memberInfo.isMember) {
+    if (!customName || customName.trim() === '') {
+      return res.json({ success: false, message: "❌ 非會員請填寫「中文大名」！" });
+    }
+    finalUserName = customName.trim();
+  }
+
   const dateStr = getSessionTargetDate(targetSession.day);
   const targetDate = new Date(dateStr);
-  // const now = new Date();
-  const now = new Date('2026-12-31T20:00:00');
+  const now = new Date();
 
-  // 🔒 時間檢查
+  // 時間檢查
   if (memberInfo.isMember) {
     const memberOpenTime = new Date(targetDate);
     memberOpenTime.setDate(targetDate.getDate() - 1);
@@ -322,7 +328,7 @@ app.post('/api/grab', async (req, res) => {
     return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
   }
 
-  saveToGoogleSheet(dateStr, cleanEmail, memberInfo.userName, statusText);
+  saveToGoogleSheet(dateStr, cleanEmail, finalUserName, statusText);
 
   res.json({ 
     success: isSuccess, 
@@ -332,7 +338,7 @@ app.post('/api/grab', async (req, res) => {
   });
 });
 
-// 💡 API: 取消報名 / 釋出名額
+// API: 取消報名
 app.post('/api/cancel', async (req, res) => {
   const { sessionId, token } = req.body;
 
@@ -363,17 +369,14 @@ app.post('/api/cancel', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
   }
 
-  // 1. 移除註冊紀錄
   registeredEmails[sessionId].delete(cleanEmail);
 
-  // 2. 名額遞補邏輯
   if (waitlistCache[sessionId] > 0) {
-    waitlistCache[sessionId] -= 1; // 候補遞補正取，候補總數 -1
+    waitlistCache[sessionId] -= 1;
   } else if (seatsCache[sessionId] < targetSession.limit) {
-    seatsCache[sessionId] += 1; // 無候補，正取剩餘名額 +1
+    seatsCache[sessionId] += 1;
   }
 
-  // 3. 記錄到 Google 試算表
   const memberInfo = await checkMemberStatus(cleanEmail);
   const dateStr = getSessionTargetDate(targetSession.day);
   saveToGoogleSheet(dateStr, cleanEmail, memberInfo.userName, '已取消');
