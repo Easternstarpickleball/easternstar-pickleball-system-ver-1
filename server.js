@@ -7,10 +7,10 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 💡 1. Render 部署必備：信任 Proxy 以取得真實 User IP (供 Rate Limiter 使用)
+// 💡 Render 部署必備：信任 Proxy 以取得真實 User IP
 app.set('trust proxy', 1);
 
-// 🔒 2. 安全性：環境變數載入
+// 🔒 環境變數載入
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 const MEMBER_SPREADSHEET_ID = process.env.MEMBER_SPREADSHEET_ID;
@@ -21,7 +21,7 @@ const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '/')));
 
-// 🔒 3. 防刷機制 (Rate Limiter)
+// 🔒 防刷機制 (Rate Limiter)
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, 
   max: 30, 
@@ -90,7 +90,7 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔄 更新會員名單快取 (強化版：擴充欄位比對與 Log)
+// 🔄 更新會員名單快取
 async function refreshMemberCache() {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) return;
@@ -103,7 +103,6 @@ async function refreshMemberCache() {
 
     const newMap = new Map();
     rows.forEach(row => {
-      // 💡 支援更多常見的 Email 欄位名稱
       const email = (
         row.get('Gmail 帳號') || 
         row.get('Email') || 
@@ -167,6 +166,7 @@ async function processSheetQueue() {
   }
 }
 
+// 寫入/更新 Google Sheet 資料
 async function saveToGoogleSheetDirectly(dateStr, userEmail, userName, status) {
   const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
   let sheet = doc.sheetsByTitle[dateStr];
@@ -177,15 +177,31 @@ async function saveToGoogleSheetDirectly(dateStr, userEmail, userName, status) {
     });
   }
 
+  const cleanEmail = userEmail.trim().toLowerCase();
+  const rows = await sheet.getRows();
+  const existingRow = rows.find(r => (r.get('Gmail 帳號') || '').trim().toLowerCase() === cleanEmail);
+
   const nowStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
-  await sheet.addRow({
-    '報名時間': nowStr,
-    '姓名/暱稱': userName,
-    'Gmail 帳號': userEmail,
-    '報名狀態': status
-  });
+
+  if (existingRow) {
+    // 若該 Email 已經在試算表中存在，直接更新狀態（例如將「候補」更新為「正取」）
+    existingRow.set('報名狀態', status);
+    existingRow.set('報名時間', nowStr);
+    await existingRow.save();
+    console.log(`📝 已在 Google Sheet 更新【${userName}】狀態為：${status}`);
+  } else {
+    // 否則直接新增一列資料
+    await sheet.addRow({
+      '報名時間': nowStr,
+      '姓名/暱稱': userName,
+      'Gmail 帳號': cleanEmail,
+      '報名狀態': status
+    });
+    console.log(`➕ 已新增【${userName}】至 Google Sheet (${status})`);
+  }
 }
 
+// 精準刪除取消者的列
 async function removeFromGoogleSheetDirectly(dateStr, userEmail) {
   const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
   const sheet = doc.sheetsByTitle[dateStr];
@@ -193,9 +209,12 @@ async function removeFromGoogleSheetDirectly(dateStr, userEmail) {
 
   const rows = await sheet.getRows();
   const cleanEmail = userEmail.trim().toLowerCase();
-  const targetRow = rows.find(row => (row.get('Gmail 帳號') || '').trim().toLowerCase() === cleanEmail);
-  if (targetRow) {
-    await targetRow.delete();
+  
+  // 找出該 Gmail 的列並精準刪除
+  const targetRows = rows.filter(row => (row.get('Gmail 帳號') || '').trim().toLowerCase() === cleanEmail);
+  for (const row of targetRows) {
+    await row.delete();
+    console.log(`🗑️ 已成功從 Google Sheet 刪除資料：${cleanEmail}`);
   }
 }
 
@@ -261,7 +280,7 @@ function getSessionTargetDate(dayOfWeekTarget) {
 // 健康檢查 Endpoint
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次 (含詳細除錯 Log)
+// API: 取得場次
 app.get('/api/sessions', async (req, res) => {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const token = req.query.token;
@@ -417,7 +436,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   });
 });
 
-// API: 取消報名
+// API: 取消報名 (徹底刪除取消者列 + 自動將候補改為正取)
 app.post('/api/cancel', async (req, res) => {
   const { sessionId, token } = req.body;
   if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
@@ -438,22 +457,56 @@ app.post('/api/cancel', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
   }
 
+  const dateStr = getSessionTargetDate(targetSession.day);
+
+  // 1. 清除記憶體中的 Email 紀錄
   registeredEmails[sessionId].delete(cleanEmail);
+
+  // 2. 清除記憶體名單中的資料
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
 
-  if (waitlistCache[sessionId] > 0) {
-    waitlistCache[sessionId] -= 1;
-  } else if (seatsCache[sessionId] < targetSession.limit) {
-    seatsCache[sessionId] += 1;
-  }
-
-  const dateStr = getSessionTargetDate(targetSession.day);
-  
+  // 3. 直接在 Google Sheet 刪除取消者的資料列
   addToSheetQueue({
     type: 'REMOVE',
     dateStr: dateStr,
     userEmail: cleanEmail
   });
+
+  let promotedNotice = "";
+
+  // 4. 自動遞補候補人員
+  if (waitlistCache[sessionId] > 0) {
+    waitlistCache[sessionId] -= 1; // 候補總數減 1
+
+    // 找到候補第一位
+    const promotedUser = sessionAttendees[sessionId].find(a => a.status.includes('候補'));
+    if (promotedUser) {
+      promotedUser.status = '正取';
+      promotedNotice = ` (已自動將候補第一位【${promotedUser.name}】遞補為正取！)`;
+
+      // 同步把這位遞補者在 Google Sheet 的狀態改寫為「正取」
+      addToSheetQueue({
+        type: 'SAVE',
+        dateStr: dateStr,
+        userEmail: promotedUser.email,
+        userName: promotedUser.name,
+        status: '正取'
+      });
+    }
+
+    // 重編其餘候補者的序號文字
+    let currentWaitlistIndex = 1;
+    sessionAttendees[sessionId].forEach(a => {
+      if (a.status.includes('候補')) {
+        a.status = `候補第 ${currentWaitlistIndex} 位`;
+        currentWaitlistIndex++;
+      }
+    });
+
+  } else if (seatsCache[sessionId] < targetSession.limit) {
+    // 沒有候補人員時，直接空出一個正取名額
+    seatsCache[sessionId] += 1;
+  }
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
     name: a.name,
@@ -463,14 +516,14 @@ app.post('/api/cancel', async (req, res) => {
 
   res.json({ 
     success: true, 
-    message: "🗑️ 已成功取消報名並釋出名額！",
+    message: `🗑️ 已成功取消報名！${promotedNotice}`,
     remainingSeats: seatsCache[sessionId],
     waitlistCount: waitlistCache[sessionId],
     attendees: sanitizedAttendees
   });
 });
 
-// API: 管理員同步 (使用 POST + Header 暗號)
+// API: 管理員同步
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) {
