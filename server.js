@@ -21,7 +21,7 @@ const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
   { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
   { id: "thu", name: "週四匹克球團", day: 4, limit: 36, waitlistLimit: 30 },
-  { id: "sat", name: "週六匹克球團", day: 6, limit: 1, waitlistLimit: 30 }
+  { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
 
 // 初始化快取
@@ -35,10 +35,10 @@ sessions.forEach(s => {
   registeredEmails[s.id] = new Set();
 });
 
-// 🚀 全域會員名單記憶體快取 (避免觸發 Google API 429 流量限制)
+// 🚀 全域會員名單記憶體快取 (防止 Google API 429 流量爆表)
 let memberMapCache = new Map();
 let lastFetchTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 快取有效期限：5 分鐘
+const CACHE_DURATION = 5 * 60 * 1000; // 5 分鐘快取
 
 // 🔑 取得 Google 試算表物件 (讀取 Render 環境變數 GOOGLE_JSON_KEY)
 async function getGoogleDoc(spreadsheetId) {
@@ -73,7 +73,7 @@ async function getGoogleDoc(spreadsheetId) {
 async function refreshMemberCache() {
   const now = Date.now();
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) {
-    return; // 5 分鐘內使用記憶體快取，不請求 Google API
+    return;
   }
 
   try {
@@ -93,13 +93,13 @@ async function refreshMemberCache() {
 
     memberMapCache = newMap;
     lastFetchTime = now;
-    console.log(`✅ 會員名單快取更新完成！共 ${memberMapCache.size} 筆會員資料。`);
+    console.log(`✅ 會員名單快取更新完成！共 ${memberMapCache.size} 筆會員。`);
   } catch (err) {
     console.error('❌ 更新會員名單快取失敗：', err.message);
   }
 }
 
-// 🔍 快速比對會員身分 (0 延遲，不耗費 Google 限額)
+// 🔍 快速比對會員身分 (0 延遲，不耗費 Google API 流量)
 async function checkMemberStatus(userEmail) {
   if (!userEmail) return { isMember: false, userName: '非會員 / 未登記' };
 
@@ -168,13 +168,15 @@ app.get('/ping', (req, res) => {
   res.status(200).send('PONG');
 });
 
-// API: 取得場次 (包含開放時間比對與自動排序)
+// API: 取得場次
 app.get('/api/sessions', async (req, res) => {
   // const now = new Date();
   const now = new Date('2026-12-31T20:00:00');
   const token = req.query.token;
 
   let isUserMember = false;
+  let userEmail = '';
+
   if (token) {
     try {
       const ticket = await googleClient.verifyIdToken({
@@ -182,7 +184,8 @@ app.get('/api/sessions', async (req, res) => {
         audience: GOOGLE_CLIENT_ID,
       });
       const payload = ticket.getPayload();
-      const memberInfo = await checkMemberStatus(payload.email);
+      userEmail = payload.email.trim().toLowerCase();
+      const memberInfo = await checkMemberStatus(userEmail);
       isUserMember = memberInfo.isMember;
     } catch (e) {
       isUserMember = false;
@@ -194,7 +197,7 @@ app.get('/api/sessions', async (req, res) => {
     const dateParts = dateStr.split('-');
     const displayDate = `${dateParts[1]}/${dateParts[2]}`;
 
-    // 計算開放時間：前一天 18:00 (會員) / 前一天 22:00 (非會員)
+    // 開放時間：前一天 18:00 (會員) / 前一天 22:00 (非會員)
     const targetDate = new Date(dateStr);
     
     const memberOpenTime = new Date(targetDate);
@@ -220,12 +223,15 @@ app.get('/api/sessions', async (req, res) => {
       openTimeNotice = `${m}/${d} 22:00 (非會員開放)`;
     }
 
+    const isUserRegistered = userEmail ? (registeredEmails[s.id] && registeredEmails[s.id].has(userEmail)) : false;
+
     return {
       ...s,
       dateStr: dateStr,
       displayDate: displayDate,
       isOpen: isOpen,
       openTimeStr: openTimeNotice,
+      isUserRegistered: isUserRegistered, // 💡 回傳使用者是否已報名
       remainingSeats: seatsCache[s.id] !== undefined ? seatsCache[s.id] : s.limit,
       waitlistCount: waitlistCache[s.id] !== undefined ? waitlistCache[s.id] : 0
     };
@@ -268,7 +274,7 @@ app.post('/api/grab', async (req, res) => {
   // const now = new Date();
   const now = new Date('2026-12-31T20:00:00');
 
-  // 🔒 開放時間安全檢查
+  // 🔒 時間檢查
   if (memberInfo.isMember) {
     const memberOpenTime = new Date(targetDate);
     memberOpenTime.setDate(targetDate.getDate() - 1);
@@ -316,6 +322,60 @@ app.post('/api/grab', async (req, res) => {
   res.json({ 
     success: isSuccess, 
     message: resMessage,
+    remainingSeats: seatsCache[sessionId],
+    waitlistCount: waitlistCache[sessionId]
+  });
+});
+
+// 💡 API: 取消報名 / 釋出名額
+app.post('/api/cancel', async (req, res) => {
+  const { sessionId, token } = req.body;
+
+  if (!sessionId || !token) {
+    return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
+  }
+
+  let userEmail = '';
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    userEmail = payload.email;
+  } catch (authErr) {
+    return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效！" });
+  }
+
+  const cleanEmail = userEmail.trim().toLowerCase();
+  const targetSession = sessions.find(s => s.id === sessionId);
+
+  if (!targetSession) {
+    return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
+  }
+
+  if (!registeredEmails[sessionId] || !registeredEmails[sessionId].has(cleanEmail)) {
+    return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
+  }
+
+  // 1. 移除註冊紀錄
+  registeredEmails[sessionId].delete(cleanEmail);
+
+  // 2. 名額遞補邏輯
+  if (waitlistCache[sessionId] > 0) {
+    waitlistCache[sessionId] -= 1; // 候補遞補正取，候補總數 -1
+  } else if (seatsCache[sessionId] < targetSession.limit) {
+    seatsCache[sessionId] += 1; // 無候補，正取剩餘名額 +1
+  }
+
+  // 3. 記錄到 Google 試算表
+  const memberInfo = await checkMemberStatus(cleanEmail);
+  const dateStr = getSessionTargetDate(targetSession.day);
+  saveToGoogleSheet(dateStr, cleanEmail, memberInfo.userName, '已取消');
+
+  res.json({ 
+    success: true, 
+    message: "🗑️ 已成功取消報名並釋出名額！",
     remainingSeats: seatsCache[sessionId],
     waitlistCount: waitlistCache[sessionId]
   });

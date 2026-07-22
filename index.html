@@ -13,44 +13,53 @@
     .status-box { background-color: #e8f5e9; color: #1b5e20; padding: 15px; border-radius: 8px; font-size: 18px; margin-bottom: 20px; }
     .session-container { margin: 15px 0; padding: 15px; background: #fdfdfd; border: 1px dashed #ccc; border-radius: 10px; }
     
-    .session-btn { display: block; width: 100%; margin: 10px 0; padding: 12px; font-size: 16px; border-radius: 8px; cursor: pointer; color: white; border: none; font-weight: bold; transition: background 0.2s; }
-    .session-btn:disabled { 
-    background: #ccc !important; 
-    color: #ffffff !important; /* 💡 加入這行：強制所有鎖定按鈕的字體都變純白 */
-    cursor: not-allowed; 
-    opacity: 0.7; 
-    }
+    .session-btn { display: block; width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; border-radius: 8px; cursor: pointer; color: white; border: none; font-weight: bold; transition: background 0.2s; }
     
-    /* 🎨 文字與按鈕通用顏色定義 */
-    .color-mon, .day-mon { color: #6f42c1; } /* 週一：紫色 */
+    /* 💡 強制停用按鈕顯示白字 */
+    .session-btn:disabled { 
+      background: #ccc !important; 
+      color: #ffffff !important; 
+      cursor: not-allowed; 
+      opacity: 0.7; 
+    }
+
+    .btn-cancel {
+      background-color: #dc3545 !important;
+      color: white !important;
+      margin-bottom: 15px;
+    }
+    .btn-cancel:hover { background-color: #bd2130 !important; }
+    
+    /* 🎨 主題顏色定義 */
+    .color-mon, .day-mon { color: #6f42c1; }
     .day-mon { background-color: #6f42c1; color: white; }
     .day-mon:hover:not(:disabled) { background-color: #59359a; }
 
-    .color-tue, .day-tue { color: #007bff; } /* 週二：藍色 */
+    .color-tue, .day-tue { color: #007bff; }
     .day-tue { background-color: #007bff; color: white; }
     .day-tue:hover:not(:disabled) { background-color: #0056b3; }
 
-    .color-wed, .day-wed { color: #d4ac0d; } /* 週三：黃色 */
+    .color-wed, .day-wed { color: #d4ac0d; }
     .day-wed { background-color: #f1c40f; color: #333; }
     .day-wed:hover:not(:disabled) { background-color: #d4ac0d; }
 
-    .color-thu, .day-thu { color: #28a745; } /* 週四：綠色 */
+    .color-thu, .day-thu { color: #28a745; }
     .day-thu { background-color: #28a745; color: white; }
     .day-thu:hover:not(:disabled) { background-color: #1e7e34; }
 
-    .color-fri, .day-fri { color: #e83e8c; } /* 週五：粉色 */
+    .color-fri, .day-fri { color: #e83e8c; }
     .day-fri { background-color: #e83e8c; color: white; }
     .day-fri:hover:not(:disabled) { background-color: #c2185b; }
 
-    .color-sat, .day-sat { color: #fd7e14; } /* 週六：橘色 */
+    .color-sat, .day-sat { color: #fd7e14; }
     .day-sat { background-color: #fd7e14; color: white; }
     .day-sat:hover:not(:disabled) { background-color: #d96302; }
 
-    .color-sun, .day-sun { color: #dc3545; } /* 週日：紅色 */
+    .color-sun, .day-sun { color: #dc3545; }
     .day-sun { background-color: #dc3545; color: white; }
     .day-sun:hover:not(:disabled) { background-color: #bd2130; }
 
-    .color-default, .day-default { color: #2e7d32; } /* 預設：深綠色 */
+    .color-default, .day-default { color: #2e7d32; }
     .day-default { background-color: #6c757d; color: white; }
     .day-default:hover:not(:disabled) { background-color: #545b62; }
 
@@ -86,7 +95,7 @@
 
     <div id="session-selector" class="session-container">
       <h3 style="margin-top:0; color:#333;">📅 場次清單：</h3>
-      <div id="session-buttons">請先登入 Google 帳號...</div>
+      <div id="session-buttons">載入中...</div>
     </div>
 
     <button id="btn-grab" class="btn-submit" onclick="startGrab()" disabled>請先選擇場次</button>
@@ -109,10 +118,14 @@
             startPolling();
           } else {
             localStorage.removeItem('pickleball_token');
+            loadSessions();
           }
         } catch (e) {
           localStorage.removeItem('pickleball_token');
+          loadSessions();
         }
+      } else {
+        loadSessions();
       }
     };
 
@@ -130,7 +143,7 @@
       document.getElementById('auth-box').style.display = 'none';
       const profileBox = document.getElementById('user-profile');
       profileBox.style.display = 'flex';
-      document.getElementById('user-profile-text').innerText = `👤 ${name} (${email})`;
+      document.getElementById('user-profile-text').innerText = `👤 ${name}`;
     }
 
     function logout() {
@@ -153,7 +166,6 @@
       return JSON.parse(jsonPayload);
     }
 
-    // 🎨 判定星期的前綴字 (mon, tue, wed, thu, fri, sat, sun)
     function getDayPrefix(session) {
       const str = (session.name + " " + session.displayDate);
       if (str.includes("一") || str.includes("Mon")) return "mon";
@@ -176,12 +188,13 @@
         btnContainer.innerHTML = '';
 
         sessions.forEach(s => {
-          const btn = document.createElement('button');
           const prefix = getDayPrefix(s);
+          
+          // 主場次按鈕
+          const btn = document.createElement('button');
           btn.className = `session-btn day-${prefix}`;
           
           if (s.isOpen) {
-            // 按鈕文字顯示邏輯
             if (s.remainingSeats > 0) {
               btn.innerText = `${s.name} (${s.displayDate}) - 剩餘 ${s.remainingSeats} 位`;
             } else {
@@ -189,12 +202,20 @@
             }
             btn.onclick = () => selectSession(s);
           } else {
-            btn.innerText = `🔒 ${s.name} (${s.displayDate}) - ${s.openTimeStr} 開放`;
+            btn.innerText = `🔒 ${s.name} (${s.displayDate}) - ${s.openTimeStr}`;
             btn.disabled = true;
           }
           btnContainer.appendChild(btn);
 
-          // 若目前已點選該場次，同步更新名額/候補顯示
+          // 💡 如果已報名，額外顯示「取消報名」按鈕
+          if (s.isUserRegistered) {
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'session-btn btn-cancel';
+            cancelBtn.innerText = `❌ 取消報名：${s.name} (${s.displayDate})`;
+            cancelBtn.onclick = () => cancelGrab(s.id);
+            btnContainer.appendChild(cancelBtn);
+          }
+
           if (selectedSession && selectedSession.id === s.id) {
             updateSeatsDisplay(s);
           }
@@ -209,11 +230,9 @@
       const titleElem = document.getElementById('event-title');
       const prefix = getDayPrefix(session);
 
-      // 1. 設定主標題名稱與對應顏色 Class
       titleElem.innerText = `${session.name}`;
       titleElem.className = `color-${prefix}`;
 
-      // 2. 更新名額或候補顯示
       updateSeatsDisplay(session);
       
       const grabBtn = document.getElementById('btn-grab');
@@ -226,17 +245,14 @@
       }
     }
 
-    // 💡 獨立的名額/候補顯示更新函式
     function updateSeatsDisplay(session) {
       const labelElem = document.getElementById('status-label');
       const seatsElem = document.getElementById('seats');
 
       if (session.remainingSeats > 0) {
-        // 正取階段：從 36 往下扣
         labelElem.innerText = "剩餘名額：";
         seatsElem.innerText = session.remainingSeats;
       } else {
-        // 候補階段：從 1 開始往上加
         labelElem.innerText = "候補名額：";
         seatsElem.innerText = `第 ${session.waitlistCount + 1} 位`;
       }
@@ -272,6 +288,31 @@
       } catch (err) {
         alert('❌ 送出失敗，請確認網路連線。');
         grabBtn.disabled = false;
+      }
+    }
+
+    // 💡 取消報名函式
+    async function cancelGrab(sessionId) {
+      if (!confirm("確定要取消此場次的報名嗎？")) return;
+
+      try {
+        const res = await fetch('/api/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            token: userToken
+          })
+        });
+
+        const result = await res.json();
+        alert(result.message);
+
+        if (result.success) {
+          loadSessions();
+        }
+      } catch (err) {
+        alert('❌ 取消失敗，請確認網路連線。');
       }
     }
   </script>
