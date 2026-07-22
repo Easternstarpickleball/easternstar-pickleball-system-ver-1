@@ -6,64 +6,83 @@
   <title>匹克球團搶位系統</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    body { font-family: Arial, sans-serif; background-color: #f0f2f5; padding: 20px; text-align: center; }
-    .card { background: white; max-width: 450px; margin: 20px auto; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-    h1 { font-size: 26px; margin-bottom: 10px; transition: color 0.3s; }
-    .date-title { color: #555; font-size: 18px; margin-bottom: 20px; font-weight: bold; }
-    .status-box { background-color: #e8f5e9; color: #1b5e20; padding: 15px; border-radius: 8px; font-size: 18px; margin-bottom: 20px; }
-    .session-container { margin: 15px 0; padding: 15px; background: #fdfdfd; border: 1px dashed #ccc; border-radius: 10px; }
+    body { font-family: 'PingFang TC', 'Microsoft JhengHei', Arial, sans-serif; background-color: #f0f2f5; padding: 20px; text-align: center; }
+    .card { background: white; max-width: 450px; margin: 20px auto; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); transition: all 0.3s ease; }
     
-    .session-btn { display: block; width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; border-radius: 8px; cursor: pointer; color: white; border: none; font-weight: bold; transition: background 0.2s; }
+    /* 🎨 💡【大改造：頂部標題卡片區塊】 */
+    .header-banner {
+      padding: 15px 20px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #4b6cb7 0%, #182848 100%);
+      color: white;
+      margin-bottom: 20px;
+      transition: all 0.4s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .header-banner h1 { font-size: 24px; margin: 0 0 5px 0; font-weight: bold; }
+    .header-banner .date-sub { font-size: 14px; opacity: 0.9; }
+
+    .status-box { background-color: #f8f9fa; color: #2d3436; padding: 12px; border-radius: 10px; font-size: 16px; margin-bottom: 20px; border: 1px solid #e9ecef; }
+    .session-container { margin: 15px 0; padding: 15px; background: #fafafa; border: 1px dashed #ccc; border-radius: 12px; }
     
-    .session-btn:disabled { 
-      background: #ccc !important; 
-      color: #ffffff !important; 
-      cursor: not-allowed; 
-      opacity: 0.7; 
+    /* 🎨【場次按鈕基礎樣式】 */
+    .session-btn { 
+      display: block; 
+      width: 100%; 
+      margin: 10px 0; 
+      padding: 14px; 
+      font-size: 16px; 
+      border-radius: 10px; 
+      cursor: pointer; 
+      color: white; 
+      border: 2px solid transparent; 
+      font-weight: bold; 
+      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      box-sizing: border-box;
+      opacity: 0.85;
+    }
+    .session-btn:hover:not(:disabled) { opacity: 1; transform: translateY(-2px); }
+    .session-btn:disabled { background: #e0e0e0 !important; color: #a0a0a0 !important; cursor: not-allowed; opacity: 0.6; transform: none; }
+
+    /* 💡【亮點：被選中的場次按鈕特效】 */
+    .session-btn.selected {
+      opacity: 1 !important;
+      transform: scale(1.03) !important; /* 微放大 */
+      border: 3px solid #333 !important; /* 顯眼外框 */
+      box-shadow: 0 6px 16px rgba(0,0,0,0.25) !important; /* 發光陰影 */
     }
 
-    .btn-cancel {
-      background-color: #dc3545 !important;
-      color: white !important;
-      margin-bottom: 15px;
+    /* 🎨 星期主題顏色庫 (亮眼漸層) */
+    .theme-mon { background: linear-gradient(135deg, #6f42c1, #a17fe0); }
+    .theme-tue { background: linear-gradient(135deg, #007bff, #00c6ff); }
+    .theme-wed { background: linear-gradient(135deg, #f1c40f, #f39c12); color: #333 !important; }
+    .theme-thu { background: linear-gradient(135deg, #28a745, #20bf6b); }
+    .theme-fri { background: linear-gradient(135deg, #e83e8c, #ff6b81); }
+    .theme-sat { background: linear-gradient(135deg, #fd7e14, #fa8231); }
+    .theme-sun { background: linear-gradient(135deg, #3315c6, #5f27cd); }
+    .theme-default { background: linear-gradient(135deg, #4b6cb7, #182848); }
+
+    /* 💡 左右並排雙按鈕 */
+    .action-btn-group { display: flex; gap: 10px; margin-top: 15px; }
+    .action-btn-group button {
+      flex: 1;
+      padding: 14px 10px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
     }
-    .btn-cancel:hover { background-color: #bd2130 !important; }
-    
-    /* 🎨 主題顏色 */
-    .color-mon, .day-mon { color: #6f42c1; }
-    .day-mon { background-color: #6f42c1; color: white; }
-    .day-mon:hover:not(:disabled) { background-color: #59359a; }
 
-    .color-tue, .day-tue { color: #007bff; }
-    .day-tue { background-color: #007bff; color: white; }
-    .day-tue:hover:not(:disabled) { background-color: #0056b3; }
-
-    .color-wed, .day-wed { color: #d4ac0d; }
-    .day-wed { background-color: #f1c40f; color: #333; }
-    .day-wed:hover:not(:disabled) { background-color: #d4ac0d; }
-
-    .color-thu, .day-thu { color: #28a745; }
-    .day-thu { background-color: #28a745; color: white; }
-    .day-thu:hover:not(:disabled) { background-color: #1e7e34; }
-
-    .color-fri, .day-fri { color: #e83e8c; }
-    .day-fri { background-color: #e83e8c; color: white; }
-    .day-fri:hover:not(:disabled) { background-color: #c2185b; }
-
-    .color-sat, .day-sat { color: #fd7e14; }
-    .day-sat { background-color: #fd7e14; color: white; }
-    .day-sat:hover:not(:disabled) { background-color: #d96302; }
-
-    .color-sun, .day-sun { color: #3315c6; }
-    .day-sun { background-color: #3315c6; color: white; }
-    .day-sun:hover:not(:disabled) { background-color: #1b1093; }
-
-    .color-default, .day-default { color: #2e7d32; }
-    .day-default { background-color: #6c757d; color: white; }
-    .day-default:hover:not(:disabled) { background-color: #545b62; }
-
-    .btn-submit { background-color: #ff4757; color: white; border: none; padding: 15px 30px; font-size: 22px; font-weight: bold; border-radius: 10px; cursor: pointer; width: 100%; box-shadow: 0 4px 10px rgba(255, 71, 87, 0.4); margin-top: 15px; }
+    .btn-submit { background-color: #2ed573; color: white; box-shadow: 0 4px 10px rgba(46, 213, 115, 0.3); }
+    .btn-submit:hover:not(:disabled) { background-color: #26af5f; }
     .btn-submit:disabled { background: #b2bec3; box-shadow: none; cursor: not-allowed; }
+
+    .btn-cancel-action { background-color: #ff4757; color: white; box-shadow: 0 4px 10px rgba(255, 71, 87, 0.3); }
+    .btn-cancel-action:hover:not(:disabled) { background-color: #e84118; }
+    .btn-cancel-action:disabled { background: #e9ecef; color: #adb5bd; box-shadow: none; cursor: not-allowed; }
+
     .user-info { background: #e3f2fd; color: #0d47a1; padding: 10px 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; display: flex; justify-content: space-between; align-items: center; word-break: break-all; text-align: left; }
     .btn-logout { background: #ff7675; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; white-space: nowrap; margin-left: 10px; }
     
@@ -71,19 +90,31 @@
     .input-box label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
     .input-box input { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
 
-    /* 💡【新增】即時名單區塊樣式 */
-    .attendees-container { margin-top: 15px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px; text-align: left; }
-    .attendees-title { margin: 0 0 10px 0; font-size: 15px; color: #333; font-weight: bold; border-bottom: 2px solid #dee2e6; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+    /* 名單區塊 (加上淡入動畫) */
+    .attendees-container { 
+      margin-top: 15px; 
+      background-color: #ffffff; 
+      border: 1px solid #e0e0e0; 
+      border-radius: 12px; 
+      padding: 15px; 
+      text-align: left; 
+      animation: fadeIn 0.3s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .attendees-title { margin: 0 0 10px 0; font-size: 15px; color: #333; font-weight: bold; border-bottom: 2px solid #f0f0f0; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
     .attendees-list { max-height: 220px; overflow-y: auto; font-size: 14px; }
-    .attendee-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px dashed #e0e0e0; }
+    .attendee-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; border-bottom: 1px dashed #eee; }
     .attendee-item:last-child { border-bottom: none; }
     .attendee-name { font-weight: 500; color: #2d3436; }
-    .status-tag { font-size: 12px; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+    .status-tag { font-size: 12px; padding: 3px 8px; border-radius: 6px; font-weight: bold; }
     .status-tag.success { background-color: #e6f4ea; color: #137333; }
     .status-tag.waitlist { background-color: #fef7e0; color: #b06000; }
     .empty-text { color: #888; font-size: 13px; font-style: italic; margin: 5px 0; text-align: center; }
 
-    /* 管理員列 */
     .admin-bar { margin-top: 25px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #888; }
     .btn-admin-sync { background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 5px; }
   </style>
@@ -91,11 +122,13 @@
 <body>
 
   <div class="card">
-    <h1 id="event-title" class="color-default">匹克球團秒搶報名</h1>
-    <div class="date-title">請選擇下方場次</div>
+    <div id="main-banner" class="header-banner theme-default">
+      <h1 id="event-title">匹克球搶位系統</h1>
+      <div id="event-date" class="date-sub">請點選下方場次卡片</div>
+    </div>
 
     <div class="status-box" id="status-box-container">
-      <span id="status-label">剩餘名額：</span><strong id="seats" style="font-size: 28px; color: #d63031;">--</strong>
+      <span id="status-label">剩餘名額：</span><strong id="seats" style="font-size: 26px; color: #d63031;">--</strong>
     </div>
 
     <div id="auth-box" style="margin-bottom: 20px;">
@@ -118,19 +151,22 @@
     </div>
 
     <div id="session-selector" class="session-container">
-      <h3 style="margin-top:0; color:#333;">📅 場次清單：</h3>
+      <h3 style="margin-top:0; color:#555; font-size: 15px; text-align: left;">📅 選擇場次：</h3>
       <div id="session-buttons">載入中...</div>
     </div>
 
-    <button id="btn-grab" class="btn-submit" onclick="startGrab()" disabled>請先選擇場次</button>
+    <div class="action-btn-group">
+      <button id="btn-grab" class="btn-submit" onclick="startGrab()" disabled>請先選擇場次</button>
+      <button id="btn-cancel" class="btn-cancel-action" onclick="startCancel()" disabled>取消報名</button>
+    </div>
 
     <div id="attendees-section" class="attendees-container" style="display: none;">
       <div class="attendees-title">
         <span id="attendees-title-text">📋 報名名單</span>
-        <span style="font-size: 12px; color: #666; font-weight: normal;">(即時同步)</span>
+        <span style="font-size: 12px; color: #888; font-weight: normal;">(即時更新)</span>
       </div>
       <div class="attendees-list" id="attendees-list">
-        <p class="empty-text">請先選擇上方場次以查看名單</p>
+        <p class="empty-text">請點擊上方場次以載入名單</p>
       </div>
     </div>
 
@@ -218,7 +254,6 @@
       return "default";
     }
 
-    // 💡【核心新增】渲染報名名單至畫面
     function renderAttendees(attendees) {
       const section = document.getElementById('attendees-section');
       const listContainer = document.getElementById('attendees-list');
@@ -262,11 +297,7 @@
 
         const nameBox = document.getElementById('non-member-name-box');
         if (nameBox) {
-          if (userToken && !isCurrentUserMember) {
-            nameBox.style.display = 'block';
-          } else {
-            nameBox.style.display = 'none';
-          }
+          nameBox.style.display = (userToken && !isCurrentUserMember) ? 'block' : 'none';
         }
 
         const btnContainer = document.getElementById('session-buttons');
@@ -275,14 +306,15 @@
         sessions.forEach(s => {
           const prefix = getDayPrefix(s);
           const btn = document.createElement('button');
-          btn.className = `session-btn day-${prefix}`;
+          
+          // 💡 判斷是否為「當前選中的場次」，加上 selected 樣式
+          const isSelected = selectedSession && selectedSession.id === s.id;
+          btn.className = `session-btn theme-${prefix} ${isSelected ? 'selected' : ''}`;
           
           if (s.isOpen) {
-            if (s.remainingSeats > 0) {
-              btn.innerText = `${s.name} (${s.displayDate}) - 剩餘 ${s.remainingSeats} 位`;
-            } else {
-              btn.innerText = `${s.name} (${s.displayDate}) - 候補第 ${s.waitlistCount + 1} 位`;
-            }
+            let statusText = s.remainingSeats > 0 ? `剩 ${s.remainingSeats} 位` : `候補第 ${s.waitlistCount + 1} 位`;
+            let userTag = s.isUserRegistered ? ' [已報名]' : '';
+            btn.innerText = `${s.name} (${s.displayDate}) - ${statusText}${userTag}`;
             btn.onclick = () => selectSession(s);
           } else {
             btn.innerText = `🔒 ${s.name} (${s.displayDate}) - ${s.openTimeStr}`;
@@ -290,18 +322,11 @@
           }
           btnContainer.appendChild(btn);
 
-          if (s.isUserRegistered) {
-            const cancelBtn = document.createElement('button');
-            cancelBtn.className = 'session-btn btn-cancel';
-            cancelBtn.innerText = `❌ 取消報名：${s.name} (${s.displayDate})`;
-            cancelBtn.onclick = () => cancelGrab(s.id);
-            btnContainer.appendChild(cancelBtn);
-          }
-
-          // 如果當前有選擇的場次，持續更新人數與名單
-          if (selectedSession && selectedSession.id === s.id) {
-            selectedSession = s; // 更新最新的 session 資料
+          // 若為被選中的場次，自動更新畫面
+          if (isSelected) {
+            selectedSession = s; 
             updateSeatsDisplay(s);
+            updateActionButtons(s);
             renderAttendees(s.attendees);
           }
         });
@@ -311,28 +336,47 @@
       }
     }
 
+    // 💡【點擊場次後的超酷變色與視覺特效】
     function selectSession(session) {
       selectedSession = session;
-      const titleElem = document.getElementById('event-title');
       const prefix = getDayPrefix(session);
 
-      titleElem.innerText = `${session.name}`;
-      titleElem.className = `color-${prefix}`;
+      // 1. 大標題 Banner 直接變色 + 更換文字
+      const banner = document.getElementById('main-banner');
+      banner.className = `header-banner theme-${prefix}`;
+      document.getElementById('event-title').innerText = session.name;
+      document.getElementById('event-date').innerText = `📅 ${session.displayDate}`;
+
+      // 2. 重新載入列表以更新「選中框」特效
+      loadSessions();
 
       updateSeatsDisplay(session);
-      
+      updateActionButtons(session);
+
+      // 3. 顯示即時名單
+      document.getElementById('attendees-title-text').innerText = `📋 ${session.name} 名單`;
+      renderAttendees(session.attendees);
+    }
+
+    function updateActionButtons(session) {
       const grabBtn = document.getElementById('btn-grab');
-      grabBtn.disabled = false;
-      
-      if (session.remainingSeats > 0) {
-        grabBtn.innerText = `🔥 立即搶位 (${session.displayDate})`;
+      const cancelBtn = document.getElementById('btn-cancel');
+
+      if (session.isUserRegistered) {
+        grabBtn.disabled = true;
+        grabBtn.innerText = `✅ 已完成報名`;
       } else {
-        grabBtn.innerText = `⚠️ 搶候補位 (${session.displayDate})`;
+        grabBtn.disabled = false;
+        grabBtn.innerText = session.remainingSeats > 0 ? `🔥 立即搶位` : `⚠️ 搶候補位`;
       }
 
-      // 💡【新增】點擊場次時同步更新下方名單
-      document.getElementById('attendees-title-text').innerText = `📋 ${session.name} (${session.displayDate}) 報名名單`;
-      renderAttendees(session.attendees);
+      if (session.isUserRegistered) {
+        cancelBtn.disabled = false;
+        cancelBtn.innerText = `❌ 取消報名`;
+      } else {
+        cancelBtn.disabled = true;
+        cancelBtn.innerText = `取消報名`;
+      }
     }
 
     function updateSeatsDisplay(session) {
@@ -341,9 +385,9 @@
 
       if (session.remainingSeats > 0) {
         labelElem.innerText = "剩餘名額：";
-        seatsElem.innerText = session.remainingSeats;
+        seatsElem.innerText = `${session.remainingSeats} 人`;
       } else {
-        labelElem.innerText = "候補名額：";
+        labelElem.innerText = "候補位置：";
         seatsElem.innerText = `第 ${session.waitlistCount + 1} 位`;
       }
     }
@@ -382,10 +426,6 @@
         alert(result.message);
 
         if (result.success) {
-          // 💡 秒級渲染最新傳回的名單
-          if (result.attendees) {
-            renderAttendees(result.attendees);
-          }
           loadSessions();
         } else {
           grabBtn.disabled = false;
@@ -396,15 +436,19 @@
       }
     }
 
-    async function cancelGrab(sessionId) {
-      if (!confirm("確定要取消此場次的報名嗎？")) return;
+    async function startCancel() {
+      if (!selectedSession || !userToken) return;
+      if (!confirm(`確定要取消【${selectedSession.name}】的報名嗎？`)) return;
+
+      const cancelBtn = document.getElementById('btn-cancel');
+      cancelBtn.disabled = true;
 
       try {
         const res = await fetch('/api/cancel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sessionId: sessionId,
+            sessionId: selectedSession.id,
             token: userToken
           })
         });
@@ -413,17 +457,16 @@
         alert(result.message);
 
         if (result.success) {
-          if (result.attendees && selectedSession && selectedSession.id === sessionId) {
-            renderAttendees(result.attendees);
-          }
           loadSessions();
+        } else {
+          cancelBtn.disabled = false;
         }
       } catch (err) {
         alert('❌ 取消失敗，請確認網路連線。');
+        cancelBtn.disabled = false;
       }
     }
 
-    // 🔄【新增】管理員手動觸發同步
     async function triggerAdminSync() {
       const secret = prompt("請輸入管理員暗號：");
       if (!secret) return;
