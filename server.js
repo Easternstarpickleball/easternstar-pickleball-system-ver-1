@@ -10,7 +10,7 @@ const GOOGLE_CLIENT_ID = '329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.goo
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // 🔒 管理員同步暗號 (預設 admin123，可自行調整)
-const ADMIN_SECRET = 'admin123';
+const ADMIN_SECRET = 'Ethan0819';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '/')));
