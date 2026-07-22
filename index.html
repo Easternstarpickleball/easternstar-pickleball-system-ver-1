@@ -21,7 +21,9 @@
       --theme-fri: linear-gradient(135deg, #d8a48f, #bc7d63);
       --theme-sat: linear-gradient(135deg, #e6b89c, #cd853f);
       --theme-sun: linear-gradient(135deg, #805ad5, #6b46c1);
-      --theme-default: linear-gradient(135deg, #2b4c7e, #132238);
+      
+      /* 💡 頂部 Banner 固定質感深藍色 */
+      --banner-fixed: linear-gradient(135deg, #2b4c7e, #132238);
     }
 
     body { 
@@ -50,13 +52,13 @@
       transition: all 0.3s ease; 
     }
 
-    /* 📌 頂部 Banner */
+    /* 📌 頂部 Banner (固定顏色與標題) */
     .header-banner {
       padding: 22px 15px;
       border-radius: 16px;
+      background: var(--banner-fixed) !important;
       color: white;
       margin-bottom: 20px;
-      transition: all 0.4s ease;
       box-shadow: 0 6px 16px rgba(0,0,0,0.15);
       text-align: center;
     }
@@ -102,6 +104,15 @@
       border: 1.5px dashed #cbd5e0; 
       border-radius: 16px; 
     }
+    .session-container h3 {
+      margin-top:0; 
+      color:#4a5568; 
+      font-size: 16px; 
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
     
     /* 📅 場次按鈕 */
     .session-btn { 
@@ -130,7 +141,7 @@
       box-shadow: 0 8px 20px rgba(0,0,0,0.18) !important;
     }
 
-    /* 各天別主題色（加上 !important 確保 Banner 與按鈕順利換色） */
+    /* 各天別主題色 */
     .theme-mon { background: var(--theme-mon) !important; }
     .theme-tue { background: var(--theme-tue) !important; }
     .theme-wed { background: var(--theme-wed) !important; }
@@ -138,7 +149,6 @@
     .theme-fri { background: var(--theme-fri) !important; }
     .theme-sat { background: var(--theme-sat) !important; }
     .theme-sun { background: var(--theme-sun) !important; }
-    .theme-default { background: var(--theme-default) !important; }
 
     /* 🚀 操作按鈕群組 */
     .action-btn-group { display: flex; gap: 12px; margin-top: 20px; }
@@ -290,9 +300,9 @@
   <div class="main-wrapper">
     <div class="card">
       
-      <div id="main-banner" class="header-banner theme-default">
+      <div id="main-banner" class="header-banner">
         <h1 id="event-title" data-i18n="appTitle">匹克球團搶位系統</h1>
-        <div id="event-date" class="date-sub" data-i18n="selectSessionHint">請點選下方場次卡片</div>
+        <div id="event-date" class="date-sub" data-i18n="selectSessionHint">請點選下方場次卡片進行報名</div>
       </div>
 
       <div class="notice-card">
@@ -329,7 +339,7 @@
       </div>
 
       <div id="session-selector" class="session-container">
-        <h3 style="margin-top:0; color:#4a5568; font-size: 16px; text-align: left;" data-i18n="selectSessionTitle">📅 選擇場次：</h3>
+        <h3 id="session-selector-title" data-i18n="selectSessionTitle">📅 選擇場次：</h3>
         <div id="session-buttons" data-i18n="loading">載入中...</div>
       </div>
 
@@ -404,7 +414,7 @@
         contactAdmin: "✉️ 聯絡管理員",
         noticeTitle: "💡 報名溫馨提醒",
         noticeContent: "1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>2. 搶位時若剛好跨過開放秒數，可按 <strong>重新整理</strong> 取得最新狀態。<br>3. 非會員報名時請務必填寫中文真實大名以利核對。",
-        selectSessionHint: "請點選下方場次卡片",
+        selectSessionHint: "請點選下方場次卡片進行報名",
         remainingSeatsLabel: "剩餘名額：",
         waitlistLabel: "候補位置：",
         googleAuthHint: "請先驗證 Google 帳號：",
@@ -559,7 +569,7 @@
       if (str.includes("五") || str.includes("Fri")) return "fri";
       if (str.includes("六") || str.includes("Sat")) return "sat";
       if (str.includes("日") || str.includes("天") || str.includes("Sun")) return "sun";
-      return "default";
+      return "mon";
     }
 
     function renderAttendees(attendees) {
@@ -658,19 +668,18 @@
       }
     }
 
-    // 💡 點擊場次時的處理邏輯：即時更換 Banner 顏色與資訊
+    // 💡 點擊場次卡片時的關鍵更新邏輯：
+    // Banner 保持固定顏色與標題，改將點選的「場次名稱+日期」顯示在選擇場次框框標題
     function selectSession(session) {
       selectedSession = session;
-      const prefix = getDayPrefix(session);
+      const t = i18n[currentLang];
       const sessionTitle = (currentLang === 'en' && session.nameEn) ? session.nameEn : session.name;
 
-      // 1. 更換頂部 Banner 的顏色主題 class
-      const banner = document.getElementById('main-banner');
-      banner.className = `header-banner theme-${prefix}`;
-      document.getElementById('event-title').innerText = sessionTitle;
-      document.getElementById('event-date').innerText = `📅 ${session.displayDate}`;
+      // 1. 動態修改選擇場次框框的標題：例如「📅 選擇場次：週四匹克球團 (7/30)」
+      const titleElem = document.getElementById('session-selector-title');
+      titleElem.innerText = `${t.selectSessionTitle} ${sessionTitle} (${session.displayDate})`;
 
-      // 2. 更新下方選取場次按鈕的高亮外框 (selected class)
+      // 2. 更新選取場次按鈕的高亮外框 (selected class)
       const buttons = document.querySelectorAll('.session-btn');
       buttons.forEach(btn => {
         if (btn.dataset.id === session.id) {
@@ -800,7 +809,7 @@
       }
     }
 
-    // --- 管理員專用功能 ---
+    // --- 🛠️ 管理員專用功能 ---
     async function adminTogglePause() {
       const secret = prompt(i18n[currentLang].adminToolsTitle);
       if (!secret) return;
