@@ -6,99 +6,219 @@
   <title data-i18n="appTitle">匹克球團搶位系統</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    body { font-family: 'PingFang TC', 'Microsoft JhengHei', Arial, sans-serif; background-color: #f0f2f5; padding: 20px; text-align: center; }
-    .card { background: white; max-width: 480px; margin: 20px auto; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); transition: all 0.3s ease; }
-    
-    /* 🌐 頂部工具列 (語言切換與聯絡按鈕) */
-    .top-actions-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .lang-switch-container { display: flex; gap: 6px; }
-    .lang-btn { background: #e9ecef; border: 1px solid #ced4da; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; transition: all 0.2s; }
-    .lang-btn.active { background: #0d6efd; color: white; border-color: #0d6efd; }
-    .contact-admin-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; background-color: #198754; color: white; text-decoration: none; font-size: 13px; font-weight: bold; border-radius: 6px; transition: background-color 0.2s; cursor: pointer; }
-    .contact-admin-btn:hover { background-color: #146c43; }
+    /* 🎨 莫蘭迪柔和色彩與大字體優化 */
+    :root {
+      --bg-main: #f4f6f8;
+      --card-bg: #ffffff;
+      --text-main: #2c3e50;
+      --text-muted: #7f8c8d;
+      
+      /* 莫蘭迪風格主題色 */
+      --theme-mon: linear-gradient(135deg, #7f8c8d, #95a5a6);
+      --theme-tue: linear-gradient(135deg, #708090, #536270);
+      --theme-wed: linear-gradient(135deg, #d69e2e, #b7791f);
+      --theme-thu: linear-gradient(135deg, #8fbc8f, #6b8e23);
+      --theme-fri: linear-gradient(135deg, #d8a48f, #bc7d63);
+      --theme-sat: linear-gradient(135deg, #e6b89c, #cd853f);
+      --theme-sun: linear-gradient(135deg, #805ad5, #6b46c1);
+      --theme-default: linear-gradient(135deg, #708090, #4a5568);
 
+    }
+
+    body { 
+      font-family: 'PingFang TC', 'Microsoft JhengHei', Arial, sans-serif; 
+      background-color: var(--bg-main); 
+      color: var(--text-main);
+      padding: 15px; 
+      margin: 0;
+      text-align: center; 
+    }
+
+    .card { 
+      background: var(--card-bg); 
+      max-width: 500px; 
+      margin: 10px auto; 
+      padding: 24px; 
+      border-radius: 20px; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.06); 
+      transition: all 0.3s ease; 
+    }
+    
+    /* 🌐 頂部工具列 */
+    .top-actions-bar { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      margin-bottom: 20px; 
+    }
+    .lang-switch-container { display: flex; gap: 8px; }
+    .lang-btn { 
+      background: #edf2f7; 
+      border: 1px solid #cbd5e0; 
+      padding: 6px 14px; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-size: 14px; 
+      font-weight: 600; 
+      color: #4a5568;
+      transition: all 0.2s; 
+    }
+    .lang-btn.active { 
+      background: #4a5568; 
+      color: white; 
+      border-color: #4a5568; 
+    }
+    .contact-admin-btn { 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 5px; 
+      padding: 6px 14px; 
+      background-color: #5a7d7c; 
+      color: white; 
+      text-decoration: none; 
+      font-size: 14px; 
+      font-weight: 600; 
+      border-radius: 8px; 
+      transition: background-color 0.2s; 
+      cursor: pointer; 
+    }
+    .contact-admin-btn:hover { background-color: #486564; }
+
+    /* 📌 頂部 Banner */
     .header-banner {
-      padding: 15px 20px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #4b6cb7 0%, #182848 100%);
+      padding: 20px;
+      border-radius: 16px;
+      background: var(--theme-default);
       color: white;
       margin-bottom: 20px;
       transition: all 0.4s ease;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.1);
     }
-    .header-banner h1 { font-size: 24px; margin: 0 0 5px 0; font-weight: bold; }
-    .header-banner .date-sub { font-size: 14px; opacity: 0.9; }
+    .header-banner h1 { font-size: 26px; margin: 0 0 8px 0; font-weight: 700; letter-spacing: 0.5px; }
+    .header-banner .date-sub { font-size: 16px; opacity: 0.95; }
 
-    .status-box { background-color: #f8f9fa; color: #2d3436; padding: 12px; border-radius: 10px; font-size: 16px; margin-bottom: 20px; border: 1px solid #e9ecef; }
-    .session-container { margin: 15px 0; padding: 15px; background: #fafafa; border: 1px dashed #ccc; border-radius: 12px; }
+    /* 📊 狀態欄與資訊卡片 */
+    .status-box { 
+      background-color: #f8fafc; 
+      color: var(--text-main); 
+      padding: 16px; 
+      border-radius: 12px; 
+      font-size: 18px; 
+      font-weight: 600;
+      margin-bottom: 20px; 
+      border: 1px solid #e2e8f0; 
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+    }
+    .seats-highlight { font-size: 30px; color: #e53e3e; font-weight: 800; }
+
+    .session-container { 
+      margin: 20px 0; 
+      padding: 18px; 
+      background: #f8fafc; 
+      border: 1.5px dashed #cbd5e0; 
+      border-radius: 16px; 
+    }
     
+    /* 📅 場次按鈕 */
     .session-btn { 
       display: block; 
       width: 100%; 
-      margin: 10px 0; 
-      padding: 14px; 
-      font-size: 16px; 
-      border-radius: 10px; 
+      margin: 12px 0; 
+      padding: 16px 14px; 
+      font-size: 17px; 
+      border-radius: 12px; 
       cursor: pointer; 
       color: white; 
       border: 2px solid transparent; 
-      font-weight: bold; 
-      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      font-weight: 700; 
+      transition: all 0.25s ease;
       box-sizing: border-box;
-      opacity: 0.85;
+      opacity: 0.9;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
     }
-    .session-btn:hover:not(:disabled) { opacity: 1; transform: translateY(-2px); }
-    .session-btn:disabled { background: #e0e0e0 !important; color: #a0a0a0 !important; cursor: not-allowed; opacity: 0.6; transform: none; }
+    .session-btn:hover:not(:disabled) { opacity: 1; transform: translateY(-2px); box-shadow: 0 6px 15px rgba(0,0,0,0.1); }
+    .session-btn:disabled { background: #e2e8f0 !important; color: #a0aec0 !important; cursor: not-allowed; opacity: 0.7; transform: none; box-shadow: none; }
 
     .session-btn.selected {
       opacity: 1 !important;
-      transform: scale(1.03) !important;
-      border: 3px solid #333 !important;
-      box-shadow: 0 6px 16px rgba(0,0,0,0.25) !important;
+      transform: scale(1.02) !important;
+      border: 3px solid #2d3748 !important;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.18) !important;
     }
 
-    .theme-mon { background: linear-gradient(135deg, #6f42c1, #a17fe0); }
-    .theme-tue { background: linear-gradient(135deg, #0363ca, #16a1c7); }
-    .theme-wed { background: linear-gradient(135deg, #c49d02, #b67c07); color: #333 !important; }
-    .theme-thu { background: linear-gradient(135deg, #28a745, #20bf6b); }
-    .theme-fri { background: linear-gradient(135deg, #e83e8c, #ff6b81); }
-    .theme-sat { background: linear-gradient(135deg, #fd7e14, #fa8231); }
-    .theme-sun { background: linear-gradient(135deg, #3315c6, #5f27cd); }
-    .theme-default { background: linear-gradient(135deg, #4b6cb7, #182848); }
+    /* 各天別主題色（套用莫蘭迪色系） */
+    .theme-mon { background: var(--theme-mon); }
+    .theme-tue { background: var(--theme-tue); }
+    .theme-wed { background: var(--theme-wed); }
+    .theme-thu { background: var(--theme-thu); }
+    .theme-fri { background: var(--theme-fri); }
+    .theme-sat { background: var(--theme-sat); }
+    .theme-sun { background: var(--theme-sun); }
+    .theme-default { background: var(--theme-default); }
 
-    .action-btn-group { display: flex; gap: 10px; margin-top: 15px; }
+    /* 🚀 操作按鈕群組 */
+    .action-btn-group { display: flex; gap: 12px; margin-top: 20px; }
     .action-btn-group button {
       flex: 1;
-      padding: 14px 10px;
-      font-size: 16px;
+      padding: 16px 12px;
+      font-size: 18px;
       font-weight: bold;
-      border-radius: 10px;
+      border-radius: 12px;
       border: none;
       cursor: pointer;
       transition: all 0.2s;
     }
 
-    .btn-submit { background-color: #2ed573; color: white; box-shadow: 0 4px 10px rgba(46, 213, 115, 0.3); }
-    .btn-submit:hover:not(:disabled) { background-color: #26af5f; }
-    .btn-submit:disabled { background: #b2bec3; box-shadow: none; cursor: not-allowed; }
+    .btn-submit { background-color: #38a169; color: white; box-shadow: 0 4px 12px rgba(56, 161, 105, 0.3); }
+    .btn-submit:hover:not(:disabled) { background-color: #2f855a; transform: translateY(-1px); }
+    .btn-submit:disabled { background: #cbd5e0; box-shadow: none; cursor: not-allowed; }
 
-    .btn-cancel-action { background-color: #ff4757; color: white; box-shadow: 0 4px 10px rgba(255, 71, 87, 0.3); }
-    .btn-cancel-action:hover:not(:disabled) { background-color: #e84118; }
-    .btn-cancel-action:disabled { background: #e9ecef; color: #adb5bd; box-shadow: none; cursor: not-allowed; }
+    .btn-cancel-action { background-color: #e53e3e; color: white; box-shadow: 0 4px 12px rgba(229, 62, 62, 0.3); }
+    .btn-cancel-action:hover:not(:disabled) { background-color: #c53030; transform: translateY(-1px); }
+    .btn-cancel-action:disabled { background: #edf2f7; color: #a0aec0; box-shadow: none; cursor: not-allowed; }
 
-    .user-info { background: #e3f2fd; color: #0d47a1; padding: 10px 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; display: flex; justify-content: space-between; align-items: center; word-break: break-all; text-align: left; }
-    .btn-logout { background: #ff7675; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; white-space: nowrap; margin-left: 10px; }
+    /* 👤 會員與輸入框區塊 */
+    .user-info { 
+      background: #ebf8ff; 
+      color: #2b6cb0; 
+      padding: 12px 16px; 
+      border-radius: 10px; 
+      margin: 18px 0; 
+      font-weight: 600; 
+      font-size: 15px;
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      word-break: break-all; 
+      text-align: left; 
+    }
+    .btn-logout { 
+      background: #e53e3e; 
+      color: white; 
+      border: none; 
+      padding: 6px 14px; 
+      border-radius: 6px; 
+      cursor: pointer; 
+      font-size: 13px; 
+      font-weight: bold;
+      white-space: nowrap; 
+      margin-left: 10px; 
+    }
     
-    .input-box { margin: 15px 0; text-align: left; }
-    .input-box label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
-    .input-box input { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+    .input-box { margin: 18px 0; text-align: left; }
+    .input-box label { display: block; font-weight: 700; margin-bottom: 8px; color: #2d3748; font-size: 15px; }
+    .input-box input { width: 100%; padding: 12px; font-size: 16px; border: 1.5px solid #cbd5e0; border-radius: 8px; box-sizing: border-box; }
 
+    /* 📋 報名名單列表 */
     .attendees-container { 
-      margin-top: 15px; 
+      margin-top: 20px; 
       background-color: #ffffff; 
-      border: 1px solid #e0e0e0; 
-      border-radius: 12px; 
-      padding: 15px; 
+      border: 1px solid #e2e8f0; 
+      border-radius: 14px; 
+      padding: 18px; 
       text-align: left; 
       animation: fadeIn 0.3s ease-in-out;
     }
@@ -107,20 +227,31 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    .attendees-title { margin: 0 0 10px 0; font-size: 15px; color: #333; font-weight: bold; border-bottom: 2px solid #f0f0f0; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-    .attendees-list { max-height: 220px; overflow-y: auto; font-size: 14px; }
-    .attendee-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; border-bottom: 1px dashed #eee; }
+    .attendees-title { 
+      margin: 0 0 12px 0; 
+      font-size: 16px; 
+      color: #2d3748; 
+      font-weight: 700; 
+      border-bottom: 2px solid #edf2f7; 
+      padding-bottom: 10px; 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+    }
+    .attendees-list { max-height: 240px; overflow-y: auto; font-size: 15px; }
+    .attendee-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 4px; border-bottom: 1px dashed #e2e8f0; }
     .attendee-item:last-child { border-bottom: none; }
-    .attendee-name { font-weight: 500; color: #2d3436; }
-    .status-tag { font-size: 12px; padding: 3px 8px; border-radius: 6px; font-weight: bold; }
-    .status-tag.success { background-color: #e6f4ea; color: #137333; }
-    .status-tag.waitlist { background-color: #fef7e0; color: #b06000; }
-    .empty-text { color: #888; font-size: 13px; font-style: italic; margin: 5px 0; text-align: center; }
+    .attendee-name { font-weight: 600; color: #2d3748; }
+    .status-tag { font-size: 13px; padding: 4px 10px; border-radius: 6px; font-weight: 700; }
+    .status-tag.success { background-color: #c6f6d5; color: #22543d; }
+    .status-tag.waitlist { background-color: #feebc8; color: #744210; }
+    .empty-text { color: #a0aec0; font-size: 14px; font-style: italic; margin: 10px 0; text-align: center; }
 
-    .admin-bar { margin-top: 25px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
-    .admin-btn-group { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
-    .btn-admin-action { background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; transition: background 0.2s; }
-    .btn-admin-action:hover { background: #495057; }
+    /* 🛠️ 管理員工具箱 */
+    .admin-bar { margin-top: 30px; padding-top: 18px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #718096; }
+    .admin-btn-group { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
+    .btn-admin-action { background: #718096; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.2s; }
+    .btn-admin-action:hover { background: #4a5568; }
   </style>
 </head>
 <body>
@@ -145,11 +276,12 @@
     </div>
 
     <div class="status-box" id="status-box-container">
-      <span id="status-label" data-i18n="remainingSeatsLabel">剩餘名額：</span><strong id="seats" style="font-size: 26px; color: #d63031;">--</strong>
+      <span id="status-label" data-i18n="remainingSeatsLabel">剩餘名額：</span>
+      <strong id="seats" class="seats-highlight">--</strong>
     </div>
 
     <div id="auth-box" style="margin-bottom: 20px;">
-      <p style="color: #666; font-size: 14px;" data-i18n="googleAuthHint">請先驗證 Google 帳號：</p>
+      <p style="color: #4a5568; font-size: 15px; font-weight: 600;" data-i18n="googleAuthHint">請先驗證 Google 帳號：</p>
       <div id="g_id_onload"
            data-client_id="329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com"
            data-callback="handleCredentialResponse">
@@ -168,7 +300,7 @@
     </div>
 
     <div id="session-selector" class="session-container">
-      <h3 style="margin-top:0; color:#555; font-size: 15px; text-align: left;" data-i18n="selectSessionTitle">📅 選擇場次：</h3>
+      <h3 style="margin-top:0; color:#4a5568; font-size: 16px; text-align: left;" data-i18n="selectSessionTitle">📅 選擇場次：</h3>
       <div id="session-buttons" data-i18n="loading">載入中...</div>
     </div>
 
@@ -180,7 +312,7 @@
     <div id="attendees-section" class="attendees-container" style="display: none;">
       <div class="attendees-title">
         <span id="attendees-title-text" data-i18n="attendeeListTitle">📋 報名名單</span>
-        <span style="font-size: 12px; color: #888; font-weight: normal;" data-i18n="realtimeUpdate">(即時更新)</span>
+        <span style="font-size: 13px; color: #a0aec0; font-weight: normal;" data-i18n="realtimeUpdate">(即時更新)</span>
       </div>
       <div class="attendees-list" id="attendees-list">
         <p class="empty-text" data-i18n="clickSessionToLoad">請點擊上方場次以載入名單</p>
@@ -206,7 +338,7 @@
     let isCurrentUserMember = false;
     let currentLang = localStorage.getItem('app_lang') || 'zh';
 
-    // 📧 聯絡管理員：跨裝置點擊切換
+    // 📧 聯絡管理員：跨裝置郵件開啟邏輯
     function openContactAdmin(e) {
       e.preventDefault();
       const email = "easternstarpickleball@gmail.com";
@@ -215,10 +347,8 @@
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
       if (isMobile) {
-        // 📱 手機版：使用 mailto 啟動郵件 App
         window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
       } else {
-        // 💻 電腦版：新分頁打開 Gmail 網頁版
         const gmailWebUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${email}&su=${encodeURIComponent(subject)}`;
         window.open(gmailWebUrl, '_blank');
       }

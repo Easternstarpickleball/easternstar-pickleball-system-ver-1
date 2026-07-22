@@ -41,12 +41,12 @@ const grabLimiter = rateLimit({
 
 app.use('/api/', apiLimiter);
 
-// 💡 球敘場次設定（新增週五與英文名稱支援）
+// 💡 球敘場次設定（保留柔和色彩主題別名）
 const sessions = [
-  { id: "tue", name: "週二匹克球團", nameEn: "Tuesday Session", day: 2, limit: 36, waitlistLimit: 30 },
-  { id: "thu", name: "週四匹克球團", nameEn: "Thursday Session", day: 4, limit: 36, waitlistLimit: 30 },
-  { id: "fri", name: "週五匹克球團", nameEn: "Friday Session", day: 5, limit: 36, waitlistLimit: 30 }, // 👈 新增星期五
-  { id: "sat", name: "週六匹克球團", nameEn: "Saturday Session", day: 6, limit: 36, waitlistLimit: 30 }
+  { id: "tue", name: "週二匹克球團", nameEn: "Tuesday Session", day: 2, limit: 36, waitlistLimit: 30, colorTheme: "tue-theme" },
+  { id: "thu", name: "週四匹克球團", nameEn: "Thursday Session", day: 4, limit: 36, waitlistLimit: 30, colorTheme: "thu-theme" },
+  { id: "fri", name: "週五匹克球團", nameEn: "Friday Session", day: 5, limit: 36, waitlistLimit: 30, colorTheme: "fri-theme" },
+  { id: "sat", name: "週六匹克球團", nameEn: "Saturday Session", day: 6, limit: 36, waitlistLimit: 30, colorTheme: "sat-theme" }
 ];
 
 // 初始化記憶體快取
@@ -301,7 +301,9 @@ function getSessionTargetDate(dayOfWeekTarget) {
   const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const dayOfWeek = today.getDay();
   let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
-  if (daysUntil === 0) daysUntil = 7;
+  
+  // 當天保持為 0（跨夜後才自動切換到下一週）
+  if (daysUntil === 0) daysUntil = 0; 
   
   const nextDate = new Date(today);
   nextDate.setDate(today.getDate() + daysUntil);
@@ -386,8 +388,11 @@ app.get('/api/sessions', async (req, res) => {
       displayDate: displayDate,
       isOpen: isOpen,
       openTimeStr: openTimeNotice,
-      openTimeStrEn: openTimeNoticeEn, // 👈 回傳英文提示
+      openTimeStrEn: openTimeNoticeEn,
       isUserRegistered: isUserRegistered,
+      remainingSeats: seatsCache[s.id],
+      waitlistCount: waitlistCache[s.id],
+      attendees: sanitizedAttendees
     }
   });
 
@@ -395,7 +400,7 @@ app.get('/api/sessions', async (req, res) => {
   res.json({ isMember: isUserMember, sessions: result });
 });
 
-// API: 搶位與候補
+// API: 搶位與候補 (完整保留壓測機制)
 app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
@@ -521,7 +526,6 @@ app.post('/api/cancel', async (req, res) => {
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
 
   recalculateSessionStatus(sessionId);
-
   triggerSheetSync(sessionId);
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
@@ -540,7 +544,9 @@ app.post('/api/cancel', async (req, res) => {
   });
 });
 
-// --- 管理員專用 API ---
+// --- 🛠️ 完整管理員專用 API (全部補回！) ---
+
+// 1. 暫停/恢復系統
 app.post('/api/admin/toggle-pause', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
@@ -550,6 +556,7 @@ app.post('/api/admin/toggle-pause', async (req, res) => {
   res.json({ success: true, message: `操作成功！目前狀態：${statusStr}` });
 });
 
+// 2. 手動新增球友
 app.post('/api/admin/add-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
@@ -579,6 +586,7 @@ app.post('/api/admin/add-user', async (req, res) => {
   res.json({ success: true, message: `✅ 已成功手動新增【${name}】！` });
 });
 
+// 3. 刪除指定球友
 app.post('/api/admin/remove-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
@@ -598,6 +606,7 @@ app.post('/api/admin/remove-user', async (req, res) => {
   res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
 });
 
+// 4. 調整球友名次/順序
 app.post('/api/admin/reorder-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
@@ -629,6 +638,7 @@ app.post('/api/admin/reorder-user', async (req, res) => {
   res.json({ success: true, message: `✅ 已成功將【${movedUser.name}】調整至第 ${newPosition} 位！` });
 });
 
+// 5. 強制從試算表同步
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
