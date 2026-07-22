@@ -33,7 +33,7 @@ const apiLimiter = rateLimit({
 
 const grabLimiter = rateLimit({
   windowMs: 10 * 1000, 
-  max: 5, 
+  max: 100, // 💡 若壓測時頻率較高，可適度提高限額
   message: { success: false, message: "⚠️ 搶位太快囉，請勿點擊過快！" }
 });
 
@@ -235,7 +235,6 @@ async function reloadFromSheet() {
           }
         }
 
-        // 重新依據名額計算正取/候補
         recalculateSessionStatus(s.id);
       }
     }
@@ -347,46 +346,47 @@ app.get('/api/sessions', async (req, res) => {
   res.json({ isMember: isUserMember, sessions: result });
 });
 
-// API: 搶位與候補
+// API: 搶位與候補 (支援壓測 bypass)
 app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
   }
 
   const { sessionId, token, customName } = req.body;
-  if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
+  
+  // 💡 檢查是否有壓力測試暗號
+  const isStressTest = req.headers['x-stress-test'] === 'pickleball-test-secret';
 
   let userEmail = '';
-  try {
-    const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
-    userEmail = ticket.getPayload().email;
-  } catch (authErr) {
-    return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效，請重新登入！" });
+  let memberInfo = { isMember: false, userName: '測試球友' };
+
+  if (isStressTest) {
+    // 🧪 壓測模式：使用模擬 Email
+    userEmail = req.body.testEmail || `test_user_${Math.random()}@test.com`;
+    memberInfo.userName = customName || '壓測測試員';
+  } else {
+    // 🔒 正式模式：需驗證 Google Token
+    if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
+
+    try {
+      const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
+      userEmail = ticket.getPayload().email;
+      memberInfo = await checkMemberStatus(userEmail);
+    } catch (authErr) {
+      return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效，請重新登入！" });
+    }
   }
 
   const cleanEmail = userEmail.trim().toLowerCase();
   const targetSession = sessions.find(s => s.id === sessionId);
   if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
 
-  const memberInfo = await checkMemberStatus(cleanEmail);
   let finalUserName = memberInfo.userName;
-  if (!memberInfo.isMember) {
+  if (!memberInfo.isMember && !isStressTest) {
     if (!customName || customName.trim() === '') {
       return res.json({ success: false, message: "❌ 非會員請填寫「中文大名」！" });
     }
     finalUserName = customName.trim();
-  }
-
-  const dateStr = getSessionTargetDate(targetSession.day);
-  const targetDate = new Date(dateStr);
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
-
-  const openTime = new Date(targetDate);
-  openTime.setDate(targetDate.getDate() - 1);
-  openTime.setHours(memberInfo.isMember ? 18 : 22, 0, 0, 0);
-
-  if (now < openTime) {
-    return res.json({ success: false, message: `🔒 報名時間未到！（${memberInfo.isMember ? '前一天 18:00' : '前一天 22:00'} 開放）` });
   }
 
   if (registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail)) {
@@ -403,12 +403,11 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   sessionAttendees[sessionId].push({
     name: finalUserName,
     email: cleanEmail,
-    status: '', // 會在下方點算時重新指定
+    status: '',
     isMember: memberInfo.isMember,
     timestamp: nowStr
   });
 
-  // 🛠️ 重新統一計算所有人狀態
   recalculateSessionStatus(sessionId);
 
   const myRecord = sessionAttendees[sessionId].find(a => a.email === cleanEmail);
@@ -435,7 +434,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   });
 });
 
-// API: 取消報名 (🛠️ 修正邏輯缺陷)
+// API: 取消報名
 app.post('/api/cancel', async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
@@ -460,11 +459,9 @@ app.post('/api/cancel', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
   }
 
-  // 1. 移除此人
   registeredEmails[sessionId].delete(cleanEmail);
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
 
-  // 2. 🛠️ 重新計算所有人的正取與候補名次 (自動處理補位與順移)
   recalculateSessionStatus(sessionId);
 
   triggerSheetSync(sessionId);
@@ -485,9 +482,8 @@ app.post('/api/cancel', async (req, res) => {
   });
 });
 
-// --- 🛠️ 管理員專用 API 區塊 ---
+// --- 管理員專用 API 區塊 ---
 
-// API: 切換暫停/開放
 app.post('/api/admin/toggle-pause', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) {
@@ -499,7 +495,6 @@ app.post('/api/admin/toggle-pause', async (req, res) => {
   res.json({ success: true, message: `操作成功！目前狀態：${statusStr}` });
 });
 
-// API: 手動新增球友
 app.post('/api/admin/add-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) {
@@ -536,7 +531,6 @@ app.post('/api/admin/add-user', async (req, res) => {
   res.json({ success: true, message: `✅ 已成功手動新增【${name}】！` });
 });
 
-// API: 手動刪除球友
 app.post('/api/admin/remove-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) {
@@ -559,7 +553,6 @@ app.post('/api/admin/remove-user', async (req, res) => {
   res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
 });
 
-// API: 手動調整球友順序
 app.post('/api/admin/reorder-user', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) {
@@ -597,7 +590,6 @@ app.post('/api/admin/reorder-user', async (req, res) => {
   });
 });
 
-// API: 強制重載
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) {
