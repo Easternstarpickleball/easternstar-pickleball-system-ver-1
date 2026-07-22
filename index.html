@@ -181,17 +181,21 @@
       if (savedToken) {
         try {
           const payload = parseJwt(savedToken);
-          if (payload.exp * 1000 > Date.now()) {
+          // 💡 檢查 Token 是否過期（預留 10 秒緩衝時間）
+          if (payload && payload.exp * 1000 > Date.now() + 10000) {
             userToken = savedToken;
             showLoggedInState(payload.name, payload.email);
             loadSessions();
             startPolling();
           } else {
+            console.warn("⚠️ 登入 Token 已過期，清除快取...");
             localStorage.removeItem('pickleball_token');
+            userToken = null;
             loadSessions();
           }
         } catch (e) {
           localStorage.removeItem('pickleball_token');
+          userToken = null;
           loadSessions();
         }
       } else {
@@ -221,7 +225,6 @@
       location.reload();
     }
 
-    // 💡 調整輪詢頻率為 5 秒，避免觸發伺服器防刷 Limit
     function startPolling() {
       if (!pollInterval) {
         pollInterval = setInterval(loadSessions, 5000);
@@ -229,12 +232,16 @@
     }
 
     function parseJwt(token) {
-      var base64Url = token.split('.')[1];
-      var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      var jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      return JSON.parse(jsonPayload);
+      try {
+        var base64Url = token.split('.')[1];
+        var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        var jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        return JSON.parse(jsonPayload);
+      } catch (e) {
+        return null;
+      }
     }
 
     function getDayPrefix(session) {
@@ -356,7 +363,7 @@
         grabBtn.innerText = `✅ 已完成報名`;
       } else {
         grabBtn.disabled = false;
-        grabBtn.innerText = session.remainingSeats > 0 ? `🔥 立即搶位` : `⚠️ 搶候補位`;
+        grabBtn.innerText = session.remainingSeats > 0 ? `🔥 領域展開（報名）` : `⚠️ 搶候補位`;
       }
 
       if (session.isUserRegistered) {
@@ -456,7 +463,6 @@
       }
     }
 
-    // 💡 修正：管理員同步發送 POST 請求並帶上 Header 暗號
     async function triggerAdminSync() {
       const secret = prompt("請輸入管理員暗號：");
       if (!secret) return;
