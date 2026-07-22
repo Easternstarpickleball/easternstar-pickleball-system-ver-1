@@ -196,7 +196,7 @@ async function processSheetSyncQueue() {
   }
 }
 
-// 🔄 重載試算表至記憶體 (完美保存會員身分修正版)
+// 🔄 重載試算表至記憶體 (修復重複報名防護漏洞版)
 async function reloadFromSheet() {
   try {
     console.log('🔄 正在從 Google 報名試算表重載資料至記憶體...');
@@ -222,8 +222,10 @@ async function reloadFromSheet() {
         const rows = await sheet.getRows();
 
         for (const row of rows) {
+          // 💡 廣泛匹配各種可能的 Email 欄位名稱
           const email = (
             row.get('Gmail 帳號') || 
+            row.get('Gmail帳號') || 
             row.get('Email') || 
             row.get('電子郵件') || 
             row.get('Gmail') || 
@@ -234,18 +236,21 @@ async function reloadFromSheet() {
           let statusRaw = row.get('報名狀態') || '正取';
           const time = row.get('報名時間') || '';
 
-          // 💡 核心修正 1：從原本的標籤判斷是不是會員
           const isMemberFromSheet = statusRaw.includes('(會員)');
-
-          // 清理掉狀態文字裡的 (會員) 或 (非會員) 括號
           let cleanStatus = statusRaw.replace(/\(會員\)|\(非會員\)/g, '').trim();
 
-          const effectiveEmail = email || `no_email_${Math.random()}`;
+          // 🔑 只有有真實 Email 的才放進防重複鎖（如果是無 Email 資料則建立備用 ID）
+          const attendeeEmail = email || `anonymous_${Math.random()}`;
 
-          if (!registeredEmails[s.id].has(effectiveEmail)) {
-            registeredEmails[s.id].add(effectiveEmail);
+          // 防止試算表本身有重複資料被重複載入
+          const alreadyLoaded = sessionAttendees[s.id].some(a => a.email === attendeeEmail && email !== '');
 
-            // 💡 核心修正 2：優先採用試算表上記錄的身分；若未記錄再向會員庫比對
+          if (!alreadyLoaded) {
+            // 🔒 只要有 Email，就一定要加入防重複對照集！
+            if (email) {
+              registeredEmails[s.id].add(email);
+            }
+
             let isMemberFinal = isMemberFromSheet;
             if (!isMemberFromSheet && email) {
               const checkResult = await checkMemberStatus(email);
@@ -254,9 +259,9 @@ async function reloadFromSheet() {
 
             sessionAttendees[s.id].push({
               name: name,
-              email: effectiveEmail,
+              email: attendeeEmail,
               status: cleanStatus,
-              isMember: isMemberFinal, // 🔑 完美保留會員身分！
+              isMember: isMemberFinal,
               timestamp: time
             });
           }
@@ -265,7 +270,7 @@ async function reloadFromSheet() {
         recalculateSessionStatus(s.id);
       }
     }
-    console.log('✅ 試算表資料已成功重載，會員身分已完整維護！');
+    console.log('✅ 試算表資料成功同步至記憶體，防重複報名機制已鎖定！');
   } catch (err) {
     console.error('❌ 重載試算表失敗：', err.message);
     throw err;
@@ -414,8 +419,14 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     finalUserName = customName.trim();
   }
 
-  if (registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail)) {
-    return res.json({ success: false, message: "❌ 您已經報名過此場次囉！請勿重複送出。" });
+  // 🔒 雙重防線：檢查 Set 集合 OR 檢查名單陣列中是否已有此 Email
+  const isAlreadyRegisteredInSet = registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail);
+  const isAlreadyInList = sessionAttendees[sessionId] && sessionAttendees[sessionId].some(a => a.email.toLowerCase() === cleanEmail);
+
+  if (isAlreadyRegisteredInSet || isAlreadyInList) {
+  // 補強：確保 Set 裡面有這個 Email
+  registeredEmails[sessionId].add(cleanEmail);
+  return res.json({ success: false, message: "❌ 您已經報名過此場次囉！請勿重複送出。" });
   }
 
   if (sessionAttendees[sessionId].length >= targetSession.limit + targetSession.waitlistLimit) {
