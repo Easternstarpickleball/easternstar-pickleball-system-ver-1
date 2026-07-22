@@ -352,14 +352,25 @@ app.get('/api/sessions', async (req, res) => {
     let isOpen = isAfterOpen && isBeforeClose;
 
     let openTimeNotice = "";
+    let openTimeNoticeEn = "";
+
     if (now >= closeTime) {
       openTimeNotice = "⏰ 本場次已於 18:00 截止報名";
+      openTimeNoticeEn = "⏰ Registration closed at 18:00";
     } else {
-      openTimeNotice = isUserMember 
-        ? `${memberOpenTime.getMonth() + 1}/${memberOpenTime.getDate()} 18:00 開放 (球敘當天18:00截止)`
-        : `${nonMemberOpenTime.getMonth() + 1}/${nonMemberOpenTime.getDate()} 22:00 開放 (球敘當天18:00截止)`;
-    }
+      const mMonth = memberOpenTime.getMonth() + 1;
+      const mDate = memberOpenTime.getDate();
+      const nmMonth = nonMemberOpenTime.getMonth() + 1;
+      const nmDate = nonMemberOpenTime.getDate();
 
+      if (isUserMember) {
+        openTimeNotice = `${mMonth}/${mDate} 18:00 開放 (球敘當天18:00截止)`;
+        openTimeNoticeEn = `Opens ${mMonth}/${mDate} 18:00 (Closes at 18:00 on game day)`;
+      } else {
+        openTimeNotice = `${nmMonth}/${nmDate} 22:00 開放 (球敘當天18:00截止)`;
+        openTimeNoticeEn = `Opens ${nmMonth}/${nmDate} 22:00 (Closes at 18:00 on game day)`;
+      }
+    }
     const isUserRegistered = userEmail ? (registeredEmails[s.id] && registeredEmails[s.id].has(userEmail)) : false;
 
     const sanitizedAttendees = (sessionAttendees[s.id] || []).map(a => ({
@@ -375,11 +386,8 @@ app.get('/api/sessions', async (req, res) => {
       displayDate: displayDate,
       isOpen: isOpen,
       openTimeStr: openTimeNotice,
+      openTimeStrEn: openTimeNoticeEn, // 👈 回傳英文提示
       isUserRegistered: isUserRegistered,
-      remainingSeats: seatsCache[s.id] !== undefined ? seatsCache[s.id] : s.limit,
-      waitlistCount: waitlistCache[s.id] !== undefined ? waitlistCache[s.id] : 0,
-      attendees: sanitizedAttendees
-    };
   });
 
   result.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));

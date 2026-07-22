@@ -131,10 +131,12 @@
         <button id="btn-lang-zh" onclick="switchLanguage('zh')" class="lang-btn active">中文</button>
         <button id="btn-lang-en" onclick="switchLanguage('en')" class="lang-btn">English</button>
       </div>
-      <a href="mailto:easternstarpickleball@gmail.com?subject=【匹克球報名系統】問題反應與諮詢" 
-         class="contact-admin-btn" 
-         target="_blank" 
-         data-i18n="contactAdmin">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=easternstarpickleball@gmail.com&su=【匹克球報名系統】問題反應與諮詢" 
+       class="contact-admin-btn" 
+      target="_blank" 
+      data-i18n="contactAdmin">
+      ✉️ 聯絡管理員
+</a>
         ✉️ 聯絡管理員
       </a>
     </div>
@@ -425,15 +427,31 @@
           const isSelected = selectedSession && selectedSession.id === s.id;
           btn.className = `session-btn theme-${prefix} ${isSelected ? 'selected' : ''}`;
           
+          // 1️⃣ 處理標題語言
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
 
           if (s.isOpen) {
-            let statusText = s.remainingSeats > 0 ? `${t.remainingSeatsLabel}${s.remainingSeats}` : `${t.waitlistLabel}${s.waitlistCount + 1}`;
-            let userTag = s.isUserRegistered ? ' [✔]' : '';
+            // 2️⃣ ✅ 開放中場次：根據當前語系組合提示文字
+            let statusText = "";
+            if (s.remainingSeats > 0) {
+              // 剩餘名額 (中: 剩 X 人 / 英: Seats Left: X)
+              statusText = currentLang === 'en' 
+                ? `Seats Left: ${s.remainingSeats}` 
+                : `剩 ${s.remainingSeats} 位`;
+            } else {
+              // 候補位置 (中: 候補第 X 位 / 英: Waitlist Spot: No. X)
+              statusText = currentLang === 'en' 
+                ? `Waitlist Spot: No. ${s.waitlistCount + 1}` 
+                : `候補第 ${s.waitlistCount + 1} 位`;
+            }
+
+            let userTag = s.isUserRegistered ? (currentLang === 'en' ? ' [Registered]' : ' [已報名]') : '';
             btn.innerText = `${sessionTitle} (${s.displayDate}) - ${statusText}${userTag}`;
             btn.onclick = () => selectSession(s);
           } else {
-            btn.innerText = `🔒 ${sessionTitle} (${s.displayDate}) - ${s.openTimeStr}`;
+            // 3️⃣ 🔒 未開放場次：顯示對應的中/英文開放時間
+            const timeNotice = (currentLang === 'en' && s.openTimeStrEn) ? s.openTimeStrEn : s.openTimeStr;
+            btn.innerText = `🔒 ${sessionTitle} (${s.displayDate}) - ${timeNotice}`;
             btn.disabled = true;
           }
           btnContainer.appendChild(btn);
