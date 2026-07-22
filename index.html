@@ -9,7 +9,6 @@
     body { font-family: 'PingFang TC', 'Microsoft JhengHei', Arial, sans-serif; background-color: #f0f2f5; padding: 20px; text-align: center; }
     .card { background: white; max-width: 450px; margin: 20px auto; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); transition: all 0.3s ease; }
     
-    /* 🎨 💡【大改造：頂部標題卡片區塊】 */
     .header-banner {
       padding: 15px 20px;
       border-radius: 12px;
@@ -25,7 +24,6 @@
     .status-box { background-color: #f8f9fa; color: #2d3436; padding: 12px; border-radius: 10px; font-size: 16px; margin-bottom: 20px; border: 1px solid #e9ecef; }
     .session-container { margin: 15px 0; padding: 15px; background: #fafafa; border: 1px dashed #ccc; border-radius: 12px; }
     
-    /* 🎨【場次按鈕基礎樣式】 */
     .session-btn { 
       display: block; 
       width: 100%; 
@@ -44,15 +42,13 @@
     .session-btn:hover:not(:disabled) { opacity: 1; transform: translateY(-2px); }
     .session-btn:disabled { background: #e0e0e0 !important; color: #a0a0a0 !important; cursor: not-allowed; opacity: 0.6; transform: none; }
 
-    /* 💡【亮點：被選中的場次按鈕特效】 */
     .session-btn.selected {
       opacity: 1 !important;
-      transform: scale(1.03) !important; /* 微放大 */
-      border: 3px solid #333 !important; /* 顯眼外框 */
-      box-shadow: 0 6px 16px rgba(0,0,0,0.25) !important; /* 發光陰影 */
+      transform: scale(1.03) !important;
+      border: 3px solid #333 !important;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.25) !important;
     }
 
-    /* 🎨 星期主題顏色庫 (亮眼漸層) */
     .theme-mon { background: linear-gradient(135deg, #6f42c1, #a17fe0); }
     .theme-tue { background: linear-gradient(135deg, #007bff, #00c6ff); }
     .theme-wed { background: linear-gradient(135deg, #f1c40f, #f39c12); color: #333 !important; }
@@ -62,7 +58,6 @@
     .theme-sun { background: linear-gradient(135deg, #3315c6, #5f27cd); }
     .theme-default { background: linear-gradient(135deg, #4b6cb7, #182848); }
 
-    /* 💡 左右並排雙按鈕 */
     .action-btn-group { display: flex; gap: 10px; margin-top: 15px; }
     .action-btn-group button {
       flex: 1;
@@ -90,7 +85,6 @@
     .input-box label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
     .input-box input { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
 
-    /* 名單區塊 (加上淡入動畫) */
     .attendees-container { 
       margin-top: 15px; 
       background-color: #ffffff; 
@@ -227,9 +221,10 @@
       location.reload();
     }
 
+    // 💡 調整輪詢頻率為 5 秒，避免觸發伺服器防刷 Limit
     function startPolling() {
       if (!pollInterval) {
-        pollInterval = setInterval(loadSessions, 3000);
+        pollInterval = setInterval(loadSessions, 5000);
       }
     }
 
@@ -307,7 +302,6 @@
           const prefix = getDayPrefix(s);
           const btn = document.createElement('button');
           
-          // 💡 判斷是否為「當前選中的場次」，加上 selected 樣式
           const isSelected = selectedSession && selectedSession.id === s.id;
           btn.className = `session-btn theme-${prefix} ${isSelected ? 'selected' : ''}`;
           
@@ -322,7 +316,6 @@
           }
           btnContainer.appendChild(btn);
 
-          // 若為被選中的場次，自動更新畫面
           if (isSelected) {
             selectedSession = s; 
             updateSeatsDisplay(s);
@@ -336,24 +329,20 @@
       }
     }
 
-    // 💡【點擊場次後的超酷變色與視覺特效】
     function selectSession(session) {
       selectedSession = session;
       const prefix = getDayPrefix(session);
 
-      // 1. 大標題 Banner 直接變色 + 更換文字
       const banner = document.getElementById('main-banner');
       banner.className = `header-banner theme-${prefix}`;
       document.getElementById('event-title').innerText = session.name;
       document.getElementById('event-date').innerText = `📅 ${session.displayDate}`;
 
-      // 2. 重新載入列表以更新「選中框」特效
       loadSessions();
 
       updateSeatsDisplay(session);
       updateActionButtons(session);
 
-      // 3. 顯示即時名單
       document.getElementById('attendees-title-text').innerText = `📋 ${session.name} 名單`;
       renderAttendees(session.attendees);
     }
@@ -467,12 +456,20 @@
       }
     }
 
+    // 💡 修正：管理員同步發送 POST 請求並帶上 Header 暗號
     async function triggerAdminSync() {
       const secret = prompt("請輸入管理員暗號：");
       if (!secret) return;
 
       try {
-        const res = await fetch(`/api/admin/sync?secret=${encodeURIComponent(secret)}`);
+        const res = await fetch('/api/admin/sync', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-secret': secret
+          }
+        });
+
         const result = await res.json();
         alert(result.message);
         if (result.success) {

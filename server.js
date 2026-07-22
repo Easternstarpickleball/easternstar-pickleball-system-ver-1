@@ -2,27 +2,43 @@ const express = require('express');
 const path = require('path');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT, OAuth2Client } = require('google-auth-library');
+const rateLimit = require('express-rate-limit');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🔒 驗證用 Client ID
-const GOOGLE_CLIENT_ID = '329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com';
-const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+// 💡 1. Render 部署必備：信任 Proxy 以取得真實 User IP (供 Rate Limiter 使用)
+app.set('trust proxy', 1);
 
-// 🔒 管理員同步暗號 (預設 admin123，可自行調整)
-const ADMIN_SECRET = 'Ethan0819';
+// 🔒 2. 安全性：環境變數載入
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
+const MEMBER_SPREADSHEET_ID = process.env.MEMBER_SPREADSHEET_ID;
+const SIGNUP_SPREADSHEET_ID = process.env.SIGNUP_SPREADSHEET_ID;
+
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '/')));
 
-// 💡 試算表 ID
-const MEMBER_SPREADSHEET_ID = '1j-KMHvmPIuIziymLE_85G6gCbrZyHzj9CgQeevjels0';
-const SIGNUP_SPREADSHEET_ID = '1Mr87l1_sfIYkcArtj2ev9PkTYjN-zthzB44v1guH2cI';
+// 🔒 3. 防刷機制 (Rate Limiter)
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, 
+  max: 30, 
+  message: { success: false, message: "⚠️ 請求過於頻繁，請稍後再試！" }
+});
+
+const grabLimiter = rateLimit({
+  windowMs: 10 * 1000, 
+  max: 5, 
+  message: { success: false, message: "⚠️ 搶位太快囉，請勿點擊過快！" }
+});
+
+app.use('/api/', apiLimiter);
 
 // 💡 球敘場次設定
 const sessions = [
   { id: "tue", name: "週二匹克球團", day: 2, limit: 36, waitlistLimit: 30 },
-  // { id: "wed", name: "週三匹克球團", day: 3, limit: 36, waitlistLimit: 30 },
   { id: "thu", name: "週四匹克球團", day: 4, limit: 1, waitlistLimit: 30 },
   { id: "sat", name: "週六匹克球團", day: 6, limit: 36, waitlistLimit: 30 }
 ];
@@ -31,7 +47,7 @@ const sessions = [
 const seatsCache = {};
 const waitlistCache = {};
 const registeredEmails = {};
-const sessionAttendees = {}; // 紀錄每場次的詳細名單: [{ name, email, status }]
+const sessionAttendees = {}; 
 
 sessions.forEach(s => {
   seatsCache[s.id] = s.limit;
@@ -40,10 +56,19 @@ sessions.forEach(s => {
   sessionAttendees[s.id] = [];
 });
 
-// 全域會員名單快取
 let memberMapCache = new Map();
 let lastFetchTime = 0;
 const CACHE_DURATION = 5 * 60 * 1000;
+
+// 🔒 輔助函式：Email 脫敏
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return '***';
+  const [user, domain] = email.split('@');
+  if (user.length <= 2) {
+    return `${user[0]}***@${domain}`;
+  }
+  return `${user.substring(0, 2)}***${user.slice(-1)}@${domain}`;
+}
 
 // 🔑 取得 Google 試算表物件
 async function getGoogleDoc(spreadsheetId) {
@@ -126,12 +151,12 @@ async function processSheetQueue() {
     }
   } catch (err) {
     console.error(`❌ 佇列任務執行失敗 [${task.type}]：`, err.message);
+  } finally {
+    setTimeout(() => {
+      isProcessingQueue = false;
+      processSheetQueue();
+    }, 400);
   }
-
-  setTimeout(() => {
-    isProcessingQueue = false;
-    processSheetQueue();
-  }, 400);
 }
 
 async function saveToGoogleSheetDirectly(dateStr, userEmail, userName, status) {
@@ -166,13 +191,12 @@ async function removeFromGoogleSheetDirectly(dateStr, userEmail) {
   }
 }
 
-// 🔄【一鍵同步核心】從 Google 報名試算表強制重新載入並覆蓋記憶體
+// 🔄 重載試算表至記憶體
 async function reloadFromSheet() {
   try {
     console.log('🔄 正在從 Google 報名試算表重載資料至記憶體...');
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
 
-    // 重置記憶體快取
     sessions.forEach(s => {
       seatsCache[s.id] = s.limit;
       waitlistCache[s.id] = 0;
@@ -215,7 +239,6 @@ async function reloadFromSheet() {
   }
 }
 
-// 計算活動日期輔助函式
 function getSessionTargetDate(dayOfWeekTarget) {
   const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const dayOfWeek = today.getDay();
@@ -227,10 +250,10 @@ function getSessionTargetDate(dayOfWeekTarget) {
   return `${nextDate.getFullYear()}-${nextDate.getMonth() + 1}-${nextDate.getDate()}`;
 }
 
-// 健康檢查
+// 健康檢查 Endpoint (適合給 UptimeRobot 監控避免休眠)
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次 (包含即時名單)
+// API: 取得場次
 app.get('/api/sessions', async (req, res) => {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
   const token = req.query.token;
@@ -270,6 +293,12 @@ app.get('/api/sessions', async (req, res) => {
 
     const isUserRegistered = userEmail ? (registeredEmails[s.id] && registeredEmails[s.id].has(userEmail)) : false;
 
+    const sanitizedAttendees = (sessionAttendees[s.id] || []).map(a => ({
+      name: a.name,
+      email: maskEmail(a.email),
+      status: a.status
+    }));
+
     return {
       ...s,
       dateStr: dateStr,
@@ -279,7 +308,7 @@ app.get('/api/sessions', async (req, res) => {
       isUserRegistered: isUserRegistered,
       remainingSeats: seatsCache[s.id] !== undefined ? seatsCache[s.id] : s.limit,
       waitlistCount: waitlistCache[s.id] !== undefined ? waitlistCache[s.id] : 0,
-      attendees: sessionAttendees[s.id] || [] // 💡 傳回給前端的名單列表
+      attendees: sanitizedAttendees
     };
   });
 
@@ -288,7 +317,7 @@ app.get('/api/sessions', async (req, res) => {
 });
 
 // API: 搶位與候補
-app.post('/api/grab', async (req, res) => {
+app.post('/api/grab', grabLimiter, async (req, res) => {
   const { sessionId, token, customName } = req.body;
   if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
 
@@ -317,7 +346,6 @@ app.post('/api/grab', async (req, res) => {
   const targetDate = new Date(dateStr);
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
 
-  // 時間檢查
   const openTime = new Date(targetDate);
   openTime.setDate(targetDate.getDate() - 1);
   openTime.setHours(memberInfo.isMember ? 18 : 22, 0, 0, 0);
@@ -334,7 +362,6 @@ app.post('/api/grab', async (req, res) => {
   let isSuccess = false;
   let resMessage = '';
 
-  // 1. 記憶體扣牌與推入即時名單 (毫秒級)
   if (seatsCache[sessionId] > 0) {
     seatsCache[sessionId] -= 1;
     registeredEmails[sessionId].add(cleanEmail);
@@ -351,14 +378,12 @@ app.post('/api/grab', async (req, res) => {
     return res.json({ success: false, message: "❌ 額滿了！正取與候補名額皆已售罄！" });
   }
 
-  // 💡 即時寫入記憶體名單陣列（前端能立刻渲染）
   sessionAttendees[sessionId].push({
     name: finalUserName,
     email: cleanEmail,
     status: statusText
   });
 
-  // 2. 丟入佇列慢慢寫入試算表
   addToSheetQueue({
     type: 'SAVE',
     dateStr: dateStr,
@@ -367,13 +392,18 @@ app.post('/api/grab', async (req, res) => {
     status: statusText
   });
 
-  // 3. 回傳最新名單給前端
+  const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
+    name: a.name,
+    email: maskEmail(a.email),
+    status: a.status
+  }));
+
   res.json({ 
     success: isSuccess, 
     message: resMessage,
     remainingSeats: seatsCache[sessionId],
     waitlistCount: waitlistCache[sessionId],
-    attendees: sessionAttendees[sessionId]
+    attendees: sanitizedAttendees
   });
 });
 
@@ -398,7 +428,6 @@ app.post('/api/cancel', async (req, res) => {
     return res.json({ success: false, message: "⚠️ 您尚未報名此場次，無法取消！" });
   }
 
-  // 從記憶體中釋出與移除
   registeredEmails[sessionId].delete(cleanEmail);
   sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
 
@@ -410,27 +439,32 @@ app.post('/api/cancel', async (req, res) => {
 
   const dateStr = getSessionTargetDate(targetSession.day);
   
-  // 背景刪除試算表資料
   addToSheetQueue({
     type: 'REMOVE',
     dateStr: dateStr,
     userEmail: cleanEmail
   });
 
+  const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
+    name: a.name,
+    email: maskEmail(a.email),
+    status: a.status
+  }));
+
   res.json({ 
     success: true, 
     message: "🗑️ 已成功取消報名並釋出名額！",
     remainingSeats: seatsCache[sessionId],
     waitlistCount: waitlistCache[sessionId],
-    attendees: sessionAttendees[sessionId]
+    attendees: sanitizedAttendees
   });
 });
 
-// 🔄 API: 管理員一鍵手動同步試算表
-app.get('/api/admin/sync', async (req, res) => {
-  const secret = req.query.secret;
-  if (secret !== ADMIN_SECRET) {
-    return res.status(403).json({ success: false, message: "❌ 暗號錯誤，權限不足！" });
+// API: 管理員同步
+app.post('/api/admin/sync', async (req, res) => {
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== ADMIN_SECRET) {
+    return res.status(403).json({ success: false, message: "❌ 權限不足或暗號錯誤！" });
   }
 
   try {
