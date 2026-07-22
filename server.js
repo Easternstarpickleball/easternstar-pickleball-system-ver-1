@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 const GOOGLE_CLIENT_ID = '329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// 🔒 管理員同步暗號 (可自行修改)
+// 🔒 管理員同步暗號 (預設 admin123，可自行調整)
 const ADMIN_SECRET = 'admin123';
 
 app.use(express.json());
@@ -443,7 +443,6 @@ app.get('/api/admin/sync', async (req, res) => {
 
 app.listen(PORT, async () => {
   console.log(`🚀 匹克球搶位伺服器已成功啟動！通訊埠：${PORT}`);
-  // 伺服器啟動時，自動從試算表預載一次舊有的報名名單
   try {
     await reloadFromSheet();
   } catch (e) {

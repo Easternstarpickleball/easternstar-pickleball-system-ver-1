@@ -70,6 +70,22 @@
     .input-box { margin: 15px 0; text-align: left; }
     .input-box label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
     .input-box input { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+
+    /* 💡【新增】即時名單區塊樣式 */
+    .attendees-container { margin-top: 15px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px; text-align: left; }
+    .attendees-title { margin: 0 0 10px 0; font-size: 15px; color: #333; font-weight: bold; border-bottom: 2px solid #dee2e6; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+    .attendees-list { max-height: 220px; overflow-y: auto; font-size: 14px; }
+    .attendee-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px dashed #e0e0e0; }
+    .attendee-item:last-child { border-bottom: none; }
+    .attendee-name { font-weight: 500; color: #2d3436; }
+    .status-tag { font-size: 12px; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+    .status-tag.success { background-color: #e6f4ea; color: #137333; }
+    .status-tag.waitlist { background-color: #fef7e0; color: #b06000; }
+    .empty-text { color: #888; font-size: 13px; font-style: italic; margin: 5px 0; text-align: center; }
+
+    /* 管理員列 */
+    .admin-bar { margin-top: 25px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #888; }
+    .btn-admin-sync { background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 5px; }
   </style>
 </head>
 <body>
@@ -107,6 +123,21 @@
     </div>
 
     <button id="btn-grab" class="btn-submit" onclick="startGrab()" disabled>請先選擇場次</button>
+
+    <div id="attendees-section" class="attendees-container" style="display: none;">
+      <div class="attendees-title">
+        <span id="attendees-title-text">📋 報名名單</span>
+        <span style="font-size: 12px; color: #666; font-weight: normal;">(即時同步)</span>
+      </div>
+      <div class="attendees-list" id="attendees-list">
+        <p class="empty-text">請先選擇上方場次以查看名單</p>
+      </div>
+    </div>
+
+    <div class="admin-bar">
+      <span>管理員工具：</span>
+      <button class="btn-admin-sync" onclick="triggerAdminSync()">🔄 強制同步試算表名單</button>
+    </div>
   </div>
 
   <script>
@@ -187,13 +218,40 @@
       return "default";
     }
 
+    // 💡【核心新增】渲染報名名單至畫面
+    function renderAttendees(attendees) {
+      const section = document.getElementById('attendees-section');
+      const listContainer = document.getElementById('attendees-list');
+
+      section.style.display = 'block';
+
+      if (!attendees || attendees.length === 0) {
+        listContainer.innerHTML = '<p class="empty-text">目前尚無人報名，快來搶第一個！</p>';
+        return;
+      }
+
+      let html = '';
+      attendees.forEach((item, index) => {
+        const isWaitlist = item.status.includes('候補');
+        const tagClass = isWaitlist ? 'waitlist' : 'success';
+
+        html += `
+          <div class="attendee-item">
+            <span class="attendee-name">${index + 1}. ${item.name}</span>
+            <span class="status-tag ${tagClass}">${item.status}</span>
+          </div>
+        `;
+      });
+
+      listContainer.innerHTML = html;
+    }
+
     async function loadSessions() {
       try {
         const url = userToken ? `/api/sessions?token=${encodeURIComponent(userToken)}` : '/api/sessions';
         const res = await fetch(url);
         const data = await res.json();
         
-        // 💡 前後端格式相容處理
         let sessions = [];
         if (Array.isArray(data)) {
           sessions = data;
@@ -202,7 +260,6 @@
           isCurrentUserMember = data.isMember || false;
         }
 
-        // 💡 控制中文大名輸入框：只在已登入且為「非會員」時顯示
         const nameBox = document.getElementById('non-member-name-box');
         if (nameBox) {
           if (userToken && !isCurrentUserMember) {
@@ -241,8 +298,11 @@
             btnContainer.appendChild(cancelBtn);
           }
 
+          // 如果當前有選擇的場次，持續更新人數與名單
           if (selectedSession && selectedSession.id === s.id) {
+            selectedSession = s; // 更新最新的 session 資料
             updateSeatsDisplay(s);
+            renderAttendees(s.attendees);
           }
         });
       } catch (err) {
@@ -269,6 +329,10 @@
       } else {
         grabBtn.innerText = `⚠️ 搶候補位 (${session.displayDate})`;
       }
+
+      // 💡【新增】點擊場次時同步更新下方名單
+      document.getElementById('attendees-title-text').innerText = `📋 ${session.name} (${session.displayDate}) 報名名單`;
+      renderAttendees(session.attendees);
     }
 
     function updateSeatsDisplay(session) {
@@ -318,6 +382,10 @@
         alert(result.message);
 
         if (result.success) {
+          // 💡 秒級渲染最新傳回的名單
+          if (result.attendees) {
+            renderAttendees(result.attendees);
+          }
           loadSessions();
         } else {
           grabBtn.disabled = false;
@@ -345,10 +413,30 @@
         alert(result.message);
 
         if (result.success) {
+          if (result.attendees && selectedSession && selectedSession.id === sessionId) {
+            renderAttendees(result.attendees);
+          }
           loadSessions();
         }
       } catch (err) {
         alert('❌ 取消失敗，請確認網路連線。');
+      }
+    }
+
+    // 🔄【新增】管理員手動觸發同步
+    async function triggerAdminSync() {
+      const secret = prompt("請輸入管理員暗號：");
+      if (!secret) return;
+
+      try {
+        const res = await fetch(`/api/admin/sync?secret=${encodeURIComponent(secret)}`);
+        const result = await res.json();
+        alert(result.message);
+        if (result.success) {
+          loadSessions();
+        }
+      } catch (e) {
+        alert("❌ 同步失敗，請確認伺服器連線。");
       }
     }
   </script>
