@@ -943,38 +943,46 @@
       }
     }
 
-// 🟢 移除黑名單的前端處理函式
-  async function adminRemoveBlacklist() {
-    const secret = prompt("請輸入管理員密碼：");
-    if (!secret) return;
 
-    const target = prompt("請輸入要解除黑名單的「球友姓名」或「Email」：");
-    if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
+    // 🟢 解除黑名單 (完整除錯版)
+    async function adminRemoveBlacklist() {
+      const secret = prompt("請輸入管理員密碼：");
+      if (!secret) return;
 
-    console.log("🚀 正在發送解除黑名單請求，目標：", target.trim());
+      const target = prompt("請輸入要解除黑名單的「球友姓名」或「Email」：");
+      if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
 
-    try {
-      const res = await fetch('/api/admin/remove-blacklist', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'x-admin-secret': secret 
-        },
-        body: JSON.stringify({ target: target.trim() }) 
-      });
+      console.log("🚀 [前端發送] 準備呼叫解除黑名單 API，目標：", target.trim());
 
-      console.log("📩 伺服器回應狀態碼：", res.status);
-      const data = await res.json();
-      alert(data.message);
+      try {
+        // 💡 提示：如果前端和後端是分開部署的，請把下面的網址改成您的 Render 完整網址 (例如 https://xxx.onrender.com/api/admin/remove-blacklist)
+        const apiUrl = '/api/admin/remove-blacklist'; 
 
-      if (data.success && typeof loadSessions === 'function') {
-        loadSessions();
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            'x-admin-secret': secret 
+          },
+          body: JSON.stringify({ 
+            target: target.trim(),
+            email: target.trim(),
+            name: target.trim()
+          }) 
+        });
+
+        console.log("📩 [前端接收] 伺服器回應 HTTP 狀態碼：", res.status);
+        const data = await res.json();
+        alert(data.message);
+
+        if (data.success && typeof loadSessions === 'function') {
+          loadSessions();
+        }
+      } catch (e) {
+        console.error("❌ [前端錯誤] 請求發送失敗：", e);
+        alert("❌ 網路連線失敗或 API 路徑不正確，請檢查瀏覽器 Console！");
       }
-    } catch (e) {
-      console.error("❌ 解除黑名單發送失敗：", e);
-      alert("❌ 操作失敗，請檢查網路連線或 API 路徑。");
     }
-  }
   </script>
 </body>
 </html>
