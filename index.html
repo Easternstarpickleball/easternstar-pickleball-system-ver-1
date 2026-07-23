@@ -938,10 +938,12 @@
         alert("❌ 操作失敗，請檢查網路連線。");
       }
     }
+
     async function adminRemoveBlacklist() {
       const secret = prompt("請輸入管理員密碼：");
       if (!secret) return;
 
+      // 💡 調整提示文字，明確告知可以輸入姓名或 Email
       const target = prompt("請輸入要移除黑名單的「球友姓名」或「Email」：");
       if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
 
@@ -952,11 +954,13 @@
             'Content-Type': 'application/json', 
             'x-admin-secret': secret 
           },
-          body: JSON.stringify({ name: target.trim() })
+          // 傳送去空白後的內容（無論是姓名還是 Email）
+          body: JSON.stringify({ target: target.trim() }) 
         });
+        
         const data = await res.json();
         alert(data.message);
-        if (data.success) loadSessions();
+        if (data.success) loadSessions(); // 成功後自動更新畫面
       } catch (e) {
         alert("❌ 操作失敗，請檢查網路連線。");
       }
