@@ -929,42 +929,52 @@
             'Content-Type': 'application/json', 
             'x-admin-secret': secret 
           },
-          body: JSON.stringify({ name: target.trim() })
+          body: JSON.stringify({ target: target.trim() })
         });
+
         const data = await res.json();
         alert(data.message);
-        if (data.success) loadSessions();
+        if (data.success && typeof loadSessions === 'function') {
+          loadSessions(); // 成功後更新頁面名單
+        }
       } catch (e) {
+        console.error("❌ 新增黑名單失敗：", e);
         alert("❌ 操作失敗，請檢查網路連線。");
       }
     }
 
-    async function adminRemoveBlacklist() {
-      const secret = prompt("請輸入管理員密碼：");
-      if (!secret) return;
+// 🟢 移除黑名單的前端處理函式
+  async function adminRemoveBlacklist() {
+    const secret = prompt("請輸入管理員密碼：");
+    if (!secret) return;
 
-      // 💡 調整提示文字，明確告知可以輸入姓名或 Email
-      const target = prompt("請輸入要移除黑名單的「球友姓名」或「Email」：");
-      if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
+    const target = prompt("請輸入要解除黑名單的「球友姓名」或「Email」：");
+    if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
 
-      try {
-        const res = await fetch('/api/admin/remove-blacklist', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json', 
-            'x-admin-secret': secret 
-          },
-          // 傳送去空白後的內容（無論是姓名還是 Email）
-          body: JSON.stringify({ target: target.trim() }) 
-        });
-        
-        const data = await res.json();
-        alert(data.message);
-        if (data.success) loadSessions(); // 成功後自動更新畫面
-      } catch (e) {
-        alert("❌ 操作失敗，請檢查網路連線。");
+    console.log("🚀 正在發送解除黑名單請求，目標：", target.trim());
+
+    try {
+      const res = await fetch('/api/admin/remove-blacklist', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          'x-admin-secret': secret 
+        },
+        body: JSON.stringify({ target: target.trim() }) 
+      });
+
+      console.log("📩 伺服器回應狀態碼：", res.status);
+      const data = await res.json();
+      alert(data.message);
+
+      if (data.success && typeof loadSessions === 'function') {
+        loadSessions();
       }
+    } catch (e) {
+      console.error("❌ 解除黑名單發送失敗：", e);
+      alert("❌ 操作失敗，請檢查網路連線或 API 路徑。");
     }
+  }
   </script>
 </body>
 </html>
