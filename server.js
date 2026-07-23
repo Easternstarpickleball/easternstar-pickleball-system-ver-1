@@ -17,7 +17,7 @@ app.use(cors());
 // 🔒 全域系統開關 (預設為 true 開放中)
 let isSystemActive = true;
 
-// 🔒 黑名單清單 (儲存被封鎖的 Email)
+// 🔒 黑名單清單 (儲存被封鎖的 Email 或 姓名)
 const blacklist = new Set();
 
 // 🔒 環境變數載入
@@ -124,7 +124,7 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔄 更新會員名單快取
+// 🔄 更新會員名單快取（修復：自動過濾空白列）
 async function refreshMemberCache() {
   const now = Date.now();
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) return;
@@ -145,8 +145,18 @@ async function refreshMemberCache() {
         ''
       ).trim().toLowerCase();
 
-      const name = row.get('姓名') || row.get('姓名/暱稱') || row.get('暱稱') || '已登記會員';
-      if (email) newMap.set(email, name);
+      const name = (
+        row.get('姓名') || 
+        row.get('姓名/暱稱') || 
+        row.get('暱稱') || 
+        ''
+      ).trim();
+
+      // 💡 關鍵過濾：若 Email 完全空白則直接跳過，不存入快取
+      if (!email) return;
+
+      const finalName = name || email.split('@')[0];
+      newMap.set(email, finalName);
     });
 
     memberMapCache = newMap;
@@ -248,7 +258,7 @@ function recalculateSessionStatus(sessionId) {
   waitlistCache[sessionId] = currentWaitlistCount;
 }
 
-// 🔄 重載試算表至記憶體
+// 🔄 重載試算表至記憶體（修復：自動忽略空白/無效資料列）
 async function reloadFromSheet() {
   try {
     console.log('🔄 正在從 Google 報名試算表重載資料至記憶體...');
@@ -278,7 +288,19 @@ async function reloadFromSheet() {
             ''
           ).trim().toLowerCase();
 
-          const name = row.get('姓名/暱稱') || row.get('姓名') || row.get('暱稱') || '已登記球友';
+          const name = (
+            row.get('姓名/暱稱') || 
+            row.get('姓名') || 
+            row.get('暱稱') || 
+            ''
+          ).trim();
+
+          // 💡【核心修復】：若 Email 和 姓名 通通為空，說明此列無效，跳過不讀取！
+          if (!email && !name) {
+            continue;
+          }
+
+          const finalName = name || (email ? email.split('@')[0] : '未命名球友');
           let statusRaw = row.get('報名狀態') || '正取';
           const time = row.get('報名時間') || '';
 
@@ -300,7 +322,7 @@ async function reloadFromSheet() {
             }
 
             sessionAttendees[s.id].push({
-              name: name,
+              name: finalName,
               email: attendeeEmail,
               status: cleanStatus,
               isMember: isMemberFinal,
@@ -444,8 +466,8 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
 
   const cleanEmail = userEmail.trim().toLowerCase();
 
-  // 🛑 檢查黑名單
-  if (blacklist.has(cleanEmail)) {
+  // 🛑 檢查黑名單 (同時比對 Email 與 姓名)
+  if (blacklist.has(cleanEmail) || blacklist.has(memberInfo.userName.toLowerCase())) {
     return res.json({ success: false, message: "🚫 您的帳號已被列入黑名單，無法報名！" });
   }
 
@@ -619,7 +641,7 @@ app.post('/api/admin/remove-user', async (req, res) => {
   res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
 });
 
-// 🚫【智慧比對修復版 API】新增黑名單 (同時支援 姓名 / Email)
+// 🚫【新增黑名單】 (同時支援 姓名 / Email)
 app.post('/api/admin/add-blacklist', async (req, res) => {
   try {
     const secret = req.headers['x-admin-secret'];
@@ -627,8 +649,8 @@ app.post('/api/admin/add-blacklist', async (req, res) => {
       return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
     }
 
-    const { email, userEmail, targetEmail, name, targetName } = req.body;
-    const query = (email || userEmail || targetEmail || name || targetName || '').trim().toLowerCase();
+    const { email, userEmail, targetEmail, name, targetName, target } = req.body;
+    const query = (target || email || userEmail || targetEmail || name || targetName || '').trim().toLowerCase();
 
     if (!query) {
       return res.status(400).json({ success: false, message: "❌ 缺少有效的姓名或 Email！" });
@@ -651,8 +673,9 @@ app.post('/api/admin/add-blacklist', async (req, res) => {
 
     const finalKey = targetEmailFound || query;
 
-    // 2. 加入黑名單 Set
+    // 2. 加入黑名單 Set (包含 Email 與 姓名)
     blacklist.add(finalKey);
+    blacklist.add(targetUserNameFound.toLowerCase());
 
     // 3. 自動從所有場次中移除該球友，並更新 Google Sheet
     let removedFromSessions = [];
@@ -691,18 +714,35 @@ app.post('/api/admin/add-blacklist', async (req, res) => {
   }
 });
 
-// 🟢 移除黑名單
+// 🟢【移除黑名單】 (同時支援 姓名 / Email)
 app.post('/api/admin/remove-blacklist', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
 
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ success: false, message: "❌ 缺少 Email！" });
+  const { email, target, name } = req.body;
+  const query = (target || email || name || '').trim().toLowerCase();
 
-  const cleanEmail = email.trim().toLowerCase();
-  blacklist.delete(cleanEmail);
+  if (!query) return res.status(400).json({ success: false, message: "❌ 缺少姓名或 Email！" });
 
-  res.json({ success: true, message: `✅ 已成功將【${cleanEmail}】從黑名單中移除！` });
+  // 從黑名單 Set 中刪除
+  let wasRemoved = false;
+  if (blacklist.has(query)) {
+    blacklist.delete(query);
+    wasRemoved = true;
+  }
+
+  // 同時尋找對應的姓名或 Email 一併刪除
+  blacklist.forEach(item => {
+    if (item.toLowerCase() === query) {
+      blacklist.delete(item);
+      wasRemoved = true;
+    }
+  });
+
+  res.json({ 
+    success: true, 
+    message: `🟢 已成功將【${query}】從黑名單中解鎖移除！` 
+  });
 });
 
 app.post('/api/admin/reorder-user', async (req, res) => {
