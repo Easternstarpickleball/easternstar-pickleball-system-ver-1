@@ -724,24 +724,42 @@ app.post('/api/admin/remove-blacklist', async (req, res) => {
 
   if (!query) return res.status(400).json({ success: false, message: "❌ 缺少姓名或 Email！" });
 
-  // 從黑名單 Set 中刪除
-  let wasRemoved = false;
-  if (blacklist.has(query)) {
-    blacklist.delete(query);
-    wasRemoved = true;
-  }
+  let removedCount = 0;
 
-  // 同時尋找對應的姓名或 Email 一併刪除
+  // 1. 尋找所有場次中，有沒有匹配這個姓名/Email 的球友完整資訊
+  let associatedEmail = '';
+  let associatedName = '';
+  
+  sessions.forEach(s => {
+    const attendees = sessionAttendees[s.id] || [];
+    const found = attendees.find(a => 
+      a.email.toLowerCase() === query || a.name.toLowerCase() === query
+    );
+    if (found) {
+      associatedEmail = found.email.toLowerCase();
+      associatedName = found.name.toLowerCase();
+    }
+  });
+
+  // 2. 一併從黑名單 Set 中刪除 (包含輸入的值、找到的 Email、找到的姓名)
+  [query, associatedEmail, associatedName].forEach(key => {
+    if (key && blacklist.has(key)) {
+      blacklist.delete(key);
+      removedCount++;
+    }
+  });
+
+  // 3. 模糊比對清除殘留項目
   blacklist.forEach(item => {
     if (item.toLowerCase() === query) {
       blacklist.delete(item);
-      wasRemoved = true;
+      removedCount++;
     }
   });
 
   res.json({ 
     success: true, 
-    message: `🟢 已成功將【${query}】從黑名單中解鎖移除！` 
+    message: `🟢 已成功將【${query}】徹底從黑名單中解鎖！` 
   });
 });
 
