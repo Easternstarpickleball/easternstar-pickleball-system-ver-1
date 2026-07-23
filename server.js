@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const cors = require('cors'); // 💡 補上 CORS 套件，解決前端連線失敗問題
+const cors = require('cors');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT, OAuth2Client } = require('google-auth-library');
 const rateLimit = require('express-rate-limit');
@@ -11,11 +11,14 @@ const PORT = process.env.PORT || 3000;
 // 💡 Render 部署必備：信任 Proxy 以取得真實 User IP
 app.set('trust proxy', 1);
 
-// 🔒 允許所有跨網域請求 (解決前端存取時跳出伺服器錯誤的問題)
+// 🔒 允許所有跨網域請求
 app.use(cors());
 
 // 🔒 全域系統開關 (預設為 true 開放中)
 let isSystemActive = true;
+
+// 🔒 黑名單清單 (儲存被封鎖的 Email)
+const blacklist = new Set();
 
 // 🔒 環境變數載入
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -86,7 +89,6 @@ function getTaipeiNow() {
 }
 
 // 📅 精準推算目標日期格式 YYYY-MM-DD
-// 邏輯：球敘當天跨過深夜 24:00 (即次日 00:00) 之後，才輪播為下週場次
 function getSessionTargetDate(dayOfWeekTarget) {
   const now = getTaipeiNow();
   const dayOfWeek = now.getDay();
@@ -319,7 +321,7 @@ async function reloadFromSheet() {
 // 健康檢查
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次資訊（當天 18:00 截止後依舊完整回傳人員名單）
+// API: 取得場次資訊
 app.get('/api/sessions', async (req, res) => {
   const now = getTaipeiNow();
   const token = req.query.token;
@@ -343,7 +345,6 @@ app.get('/api/sessions', async (req, res) => {
     const [yyyy, mm, dd] = dateStr.split('-');
     const displayDate = `${parseInt(mm)}/${parseInt(dd)}`;
     
-    // 精準指定台北時間 +08:00
     const memberOpenTime = new Date(`${dateStr}T18:00:00+08:00`);
     memberOpenTime.setDate(memberOpenTime.getDate() - 1);
 
@@ -378,7 +379,6 @@ app.get('/api/sessions', async (req, res) => {
     }
     const isUserRegistered = userEmail ? registeredEmails[s.id]?.has(userEmail) : false;
 
-    // 💡 即使過 18:00 截止時間，此名單陣列依然完整回傳給前端顯示
     const sanitizedAttendees = (sessionAttendees[s.id] || []).map(a => ({
       name: a.name,
       email: maskEmail(a.email),
@@ -442,6 +442,13 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     }
   }
 
+  const cleanEmail = userEmail.trim().toLowerCase();
+
+  // 🛑 檢查黑名單
+  if (blacklist.has(cleanEmail)) {
+    return res.json({ success: false, message: "🚫 您的帳號已被列入黑名單，無法報名！" });
+  }
+
   const memberOpenTime = new Date(`${dateStr}T18:00:00+08:00`);
   memberOpenTime.setDate(memberOpenTime.getDate() - 1);
 
@@ -453,8 +460,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   if (now < requiredOpenTime && !isStressTest) {
     return res.json({ success: false, message: "⏰ 該場次尚未開放報名！" });
   }
-
-  const cleanEmail = userEmail.trim().toLowerCase();
 
   let finalUserName = memberInfo.userName;
   if (!memberInfo.isMember && !isStressTest) {
@@ -612,6 +617,42 @@ app.post('/api/admin/remove-user', async (req, res) => {
   recalculateSessionStatus(sessionId);
   triggerSheetSync(sessionId);
   res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
+});
+
+// 🚫【新增 API】加入黑名單
+app.post('/api/admin/add-blacklist', async (req, res) => {
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
+
+  const { email, sessionId } = req.body;
+  if (!email) return res.status(400).json({ success: false, message: "❌ 缺少 Email！" });
+
+  const cleanEmail = email.trim().toLowerCase();
+  blacklist.add(cleanEmail);
+
+  // 如果指定了場次，同時將該使用者從該場次的名單中移除
+  if (sessionId && registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail)) {
+    registeredEmails[sessionId].delete(cleanEmail);
+    sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
+    recalculateSessionStatus(sessionId);
+    triggerSheetSync(sessionId);
+  }
+
+  res.json({ success: true, message: `🚫 已成功將【${cleanEmail}】加入黑名單！` });
+});
+
+// 🟢【新增 API】移除黑名單
+app.post('/api/admin/remove-blacklist', async (req, res) => {
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
+
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ success: false, message: "❌ 缺少 Email！" });
+
+  const cleanEmail = email.trim().toLowerCase();
+  blacklist.delete(cleanEmail);
+
+  res.json({ success: true, message: `✅ 已成功將【${cleanEmail}】從黑名單中移除！` });
 });
 
 app.post('/api/admin/reorder-user', async (req, res) => {
