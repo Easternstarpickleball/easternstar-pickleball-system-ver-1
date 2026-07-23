@@ -766,65 +766,80 @@ app.post('/api/admin/add-blacklist', async (req, res) => {
   }
 });
 
-// 🟢【解除黑名單 API (完整 Log 增強版)】
-// 🟢【徹底解鎖版】移除黑名單 (同時清理對應的 Email 與 姓名)
+// 🟢【智慧關聯解鎖版】輸入姓名自動連同 Email 一併刪除
 app.post('/api/admin/remove-blacklist', async (req, res) => {
   try {
     const secret = req.headers['x-admin-secret'];
     if (!secret || secret !== ADMIN_SECRET) {
-      console.log('⚠️ [解除黑名單] 暗號錯誤！');
       return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
     }
 
     const { email, target, name } = req.body;
-    const query = (target || email || name || '').trim().toLowerCase();
+    const rawQuery = (target || email || name || '').trim().toLowerCase();
 
-    if (!query) {
-      console.log('⚠️ [解除黑名單] 缺少傳入關鍵字');
+    if (!rawQuery) {
       return res.status(400).json({ success: false, message: "❌ 缺少姓名或 Email！" });
     }
 
-    console.log(`🔍 [收到解除黑名單請求] 關鍵字：${query}`);
+    console.log(`🔍 [收到解除黑名單請求] 搜尋關鍵字：${rawQuery}`);
 
-    let removedKeys = [];
+    // 先確保記憶體與 Google Sheet 最新紀錄同步
+    await reloadBlacklistFromSheet();
 
-    // 1. 自動搜尋所有場次，抓出對應的 Email 與 姓名
-    let associatedEmail = '';
-    let associatedName = '';
+    let keysToRemove = new Set();
+    keysToRemove.add(rawQuery); // 加入您輸入的關鍵字
+
+    // 💡 1. 遍歷黑名單，把包含這個關鍵字的所有黑名單項目（例如包含這個 Email 或 姓名）都列入待刪除
+    blacklist.forEach(item => {
+      if (item.includes(rawQuery) || rawQuery.includes(item)) {
+        keysToRemove.add(item);
+      }
+    });
+
+    // 💡 2. 搜尋所有歷史場次名單，只要與輸入關鍵字匹配，就把對應的 Email 和 姓名 通通抓出來一起刪除！
     sessions.forEach(s => {
       const attendees = sessionAttendees[s.id] || [];
-      const found = attendees.find(a => 
-        a.email.toLowerCase() === query || a.name.toLowerCase() === query
-      );
-      if (found) {
-        associatedEmail = found.email.toLowerCase();
-        associatedName = found.name.toLowerCase();
-      }
-    });
+      attendees.forEach(a => {
+        const aName = a.name.toLowerCase();
+        const aEmail = a.email.toLowerCase();
 
-    // 2. 收集所有可能的關鍵字 (包含輸入值、找到的 Email、找到的姓名)
-    const targetsToRemove = new Set([query, associatedEmail, associatedName].filter(Boolean));
-
-    // 3. 遍歷當前黑名單 Set，只要包含相關關鍵字（例如 Email 包含或姓名包含）通通刪除！
-    blacklist.forEach(item => {
-      const itemLower = item.toLowerCase();
-      for (const t of targetsToRemove) {
-        if (itemLower === t || itemLower.includes(t) || t.includes(itemLower)) {
-          blacklist.delete(item);
-          removedKeys.push(item);
-          break;
+        // 如果名字或 Email 匹配您輸入的關鍵字
+        if (aName.includes(rawQuery) || aEmail.includes(rawQuery) || rawQuery.includes(aName) || rawQuery.includes(aEmail)) {
+          keysToRemove.add(aName);
+          keysToRemove.add(aEmail);
         }
-      }
+      });
     });
 
-    // 4. 覆寫同步寫回 Google Sheet 分頁
+    // 💡 3. 執行刪除
+    let removedList = [];
+    keysToRemove.forEach(key => {
+      blacklist.forEach(item => {
+        // 只要黑名單項目與收集到的關鍵字相符，就刪除
+        if (item === key || item.includes(key) || key.includes(item)) {
+          if (blacklist.has(item)) {
+            blacklist.delete(item);
+            removedList.push(item);
+          }
+        }
+      });
+    });
+
+    // 💡 4. 將最新結果覆寫同步回 Google Sheet
     await saveBlacklistToSheet();
 
-    console.log(`🟢 [黑名單徹底解除成功] 已清除：[${removedKeys.join(', ')}]，目前剩餘黑名單數：${blacklist.size}`);
+    console.log(`🟢 [黑名單徹底解鎖成功] 成功清除：[${removedList.join(', ')}]，剩餘黑名單數：${blacklist.size}`);
+
+    if (removedList.length === 0) {
+      return res.json({ 
+        success: false, 
+        message: `⚠️ 黑名單中找不到與【${rawQuery}】相關的紀錄！` 
+      });
+    }
 
     return res.json({ 
       success: true, 
-      message: `🟢 已成功將【${query}】及其相關 Email 徹底從黑名單中解鎖！` 
+      message: `🟢 已成功將【${rawQuery}】及其關聯的 Email/姓名（共 ${removedList.length} 筆紀錄）徹底從黑名單中移除！` 
     });
 
   } catch (err) {
