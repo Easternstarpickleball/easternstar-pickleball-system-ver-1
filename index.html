@@ -441,6 +441,7 @@
         adminReorder: "↕️ 調整球友順序",
         adminSync: "🔄 強制同步試算表",
         adminBlacklist: "🚫 新增黑名單",
+        adminRemoveBlacklist: "🟢 移除黑名單", // 💡 新增這行
         seatsCount: "人",
         waitlistRank: "第 {num} 位",
         memberTag: " (會員)",
@@ -475,6 +476,7 @@
         adminReorder: "↕️ Reorder Player",
         adminSync: "🔄 Force Sync Sheet",
         adminBlacklist: "🚫 Add to Blacklist",
+        adminRemoveBlacklist: "🟢 Remove from Blacklist", // 💡
         seatsCount: " Left",
         waitlistRank: "No. {num}",
         memberTag: " (Member)",
@@ -921,6 +923,29 @@
 
       try {
         const res = await fetch('/api/admin/add-blacklist', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            'x-admin-secret': secret 
+          },
+          body: JSON.stringify({ name: target.trim() })
+        });
+        const data = await res.json();
+        alert(data.message);
+        if (data.success) loadSessions();
+      } catch (e) {
+        alert("❌ 操作失敗，請檢查網路連線。");
+      }
+    }
+    async function adminRemoveBlacklist() {
+      const secret = prompt("請輸入管理員密碼：");
+      if (!secret) return;
+
+      const target = prompt("請輸入要移除黑名單的「球友姓名」或「Email」：");
+      if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
+
+      try {
+        const res = await fetch('/api/admin/remove-blacklist', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json', 
