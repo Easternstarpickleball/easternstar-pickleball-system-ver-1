@@ -912,30 +912,27 @@
       }
     }
 
-    // 🚫 管理員新增黑名單 (只需管理員密碼 + 球友姓名)
     async function adminAddBlacklist() {
       const secret = prompt("請輸入管理員密碼：");
       if (!secret) return;
 
-      const targetName = prompt("請輸入要加入黑名單的「球友姓名」：");
-      if (!targetName || !targetName.trim()) {
-        alert("❌ 姓名不能為空白！");
-        return;
-      }
+      const target = prompt("請輸入要加入黑名單的「球友姓名」或「Email」：");
+      if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
 
       try {
-        const res = await fetch('/api/admin/blacklist', {
+        const res = await fetch('/api/admin/add-blacklist', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json', 
             'x-admin-secret': secret 
           },
-          body: JSON.stringify({ name: targetName.trim() })
+          body: JSON.stringify({ name: target.trim() })
         });
         const data = await res.json();
         alert(data.message);
+        if (data.success) loadSessions();
       } catch (e) {
-        alert("❌ 操作失敗，請檢查伺服器連線。");
+        alert("❌ 操作失敗，請檢查網路連線。");
       }
     }
   </script>

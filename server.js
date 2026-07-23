@@ -619,29 +619,79 @@ app.post('/api/admin/remove-user', async (req, res) => {
   res.json({ success: true, message: `🗑️ 已成功刪除【${cleanEmail}】，並自動處理遞補！` });
 });
 
-// 🚫【新增 API】加入黑名單
+// 🚫【智慧比對修復版 API】新增黑名單 (同時支援 姓名 / Email)
 app.post('/api/admin/add-blacklist', async (req, res) => {
-  const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
+  try {
+    const secret = req.headers['x-admin-secret'];
+    if (!secret || secret !== ADMIN_SECRET) {
+      return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
+    }
 
-  const { email, sessionId } = req.body;
-  if (!email) return res.status(400).json({ success: false, message: "❌ 缺少 Email！" });
+    const { email, userEmail, targetEmail, name, targetName } = req.body;
+    const query = (email || userEmail || targetEmail || name || targetName || '').trim().toLowerCase();
 
-  const cleanEmail = email.trim().toLowerCase();
-  blacklist.add(cleanEmail);
+    if (!query) {
+      return res.status(400).json({ success: false, message: "❌ 缺少有效的姓名或 Email！" });
+    }
 
-  // 如果指定了場次，同時將該使用者從該場次的名單中移除
-  if (sessionId && registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail)) {
-    registeredEmails[sessionId].delete(cleanEmail);
-    sessionAttendees[sessionId] = sessionAttendees[sessionId].filter(a => a.email !== cleanEmail);
-    recalculateSessionStatus(sessionId);
-    triggerSheetSync(sessionId);
+    let targetEmailFound = '';
+    let targetUserNameFound = query;
+
+    // 1. 自動搜尋所有場次比對出這名球友的 Email 與姓名
+    sessions.forEach(s => {
+      const attendees = sessionAttendees[s.id] || [];
+      const found = attendees.find(a => 
+        a.email.toLowerCase() === query || a.name.toLowerCase() === query
+      );
+      if (found) {
+        targetEmailFound = found.email;
+        targetUserNameFound = found.name;
+      }
+    });
+
+    const finalKey = targetEmailFound || query;
+
+    // 2. 加入黑名單 Set
+    blacklist.add(finalKey);
+
+    // 3. 自動從所有場次中移除該球友，並更新 Google Sheet
+    let removedFromSessions = [];
+    sessions.forEach(s => {
+      if (sessionAttendees[s.id]) {
+        const initialLen = sessionAttendees[s.id].length;
+        sessionAttendees[s.id] = sessionAttendees[s.id].filter(a => 
+          a.email.toLowerCase() !== finalKey && a.name.toLowerCase() !== targetUserNameFound.toLowerCase()
+        );
+
+        if (sessionAttendees[s.id].length < initialLen) {
+          if (registeredEmails[s.id] && targetEmailFound) {
+            registeredEmails[s.id].delete(targetEmailFound);
+          }
+          recalculateSessionStatus(s.id);
+          triggerSheetSync(s.id);
+          removedFromSessions.push(s.name);
+        }
+      }
+    });
+
+    let extraMsg = removedFromSessions.length > 0 
+      ? `，並已將其從【${removedFromSessions.join('、')}】名單剔除` 
+      : '';
+
+    console.log(`🚫 管理員已將【${targetUserNameFound} (${finalKey})】加入黑名單${extraMsg}`);
+
+    return res.json({ 
+      success: true, 
+      message: `🚫 已成功將【${targetUserNameFound}】加入黑名單${extraMsg}！` 
+    });
+
+  } catch (err) {
+    console.error('❌ 加入黑名單執行失敗：', err);
+    return res.status(500).json({ success: false, message: `❌ 伺服器內部錯誤：${err.message}` });
   }
-
-  res.json({ success: true, message: `🚫 已成功將【${cleanEmail}】加入黑名單！` });
 });
 
-// 🟢【新增 API】移除黑名單
+// 🟢 移除黑名單
 app.post('/api/admin/remove-blacklist', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
