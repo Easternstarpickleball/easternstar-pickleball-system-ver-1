@@ -293,6 +293,8 @@
     .admin-btn-group { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
     .btn-admin-action { background: #718096; color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; transition: background 0.2s; }
     .btn-admin-action:hover { background: #4a5568; }
+    .btn-admin-danger { background-color: #c53030 !important; }
+    .btn-admin-danger:hover { background-color: #9b2c2c !important; }
   </style>
 </head>
 <body>
@@ -380,6 +382,7 @@
         <button class="btn-admin-action" onclick="adminRemoveUser()" data-i18n="adminRemove">❌ 手動刪除球友</button>
         <button class="btn-admin-action" onclick="adminReorderUser()" data-i18n="adminReorder">↕️ 調整球友順序</button>
         <button class="btn-admin-action" onclick="triggerAdminSync()" data-i18n="adminSync">🔄 強制同步試算表</button>
+        <button class="btn-admin-action btn-admin-danger" onclick="adminAddBlacklist()" data-i18n="adminBlacklist">🚫 新增黑名單</button>
       </div>
     </div>
   </footer>
@@ -437,6 +440,7 @@
         adminRemove: "❌ 手動刪除球友",
         adminReorder: "↕️ 調整球友順序",
         adminSync: "🔄 強制同步試算表",
+        adminBlacklist: "🚫 新增黑名單",
         seatsCount: "人",
         waitlistRank: "第 {num} 位",
         memberTag: " (會員)",
@@ -470,6 +474,7 @@
         adminRemove: "❌ Remove Player",
         adminReorder: "↕️ Reorder Player",
         adminSync: "🔄 Force Sync Sheet",
+        adminBlacklist: "🚫 Add to Blacklist",
         seatsCount: " Left",
         waitlistRank: "No. {num}",
         memberTag: " (Member)",
@@ -654,7 +659,6 @@
           }
           btnContainer.appendChild(btn);
 
-          // 當目前被選中的場次資料在輪詢被更新時，同步更新面板資訊
           if (isSelected) {
             selectedSession = s; 
             updateSeatsDisplay(s);
@@ -668,18 +672,14 @@
       }
     }
 
-    // 💡 點擊場次卡片時的關鍵更新邏輯：
-    // Banner 保持固定顏色與標題，改將點選的「場次名稱+日期」顯示在選擇場次框框標題
     function selectSession(session) {
       selectedSession = session;
       const t = i18n[currentLang];
       const sessionTitle = (currentLang === 'en' && session.nameEn) ? session.nameEn : session.name;
 
-      // 1. 動態修改選擇場次框框的標題：例如「📅 選擇場次：週四匹克球團 (7/30)」
       const titleElem = document.getElementById('session-selector-title');
       titleElem.innerText = `${t.selectSessionTitle} ${sessionTitle} (${session.displayDate})`;
 
-      // 2. 更新選取場次按鈕的高亮外框 (selected class)
       const buttons = document.querySelectorAll('.session-btn');
       buttons.forEach(btn => {
         if (btn.dataset.id === session.id) {
@@ -689,7 +689,6 @@
         }
       });
 
-      // 3. 更新名額資訊、報名按鈕狀態與名單
       updateSeatsDisplay(session);
       updateActionButtons(session);
 
@@ -811,7 +810,7 @@
 
     // --- 🛠️ 管理員專用功能 ---
     async function adminTogglePause() {
-      const secret = prompt(i18n[currentLang].adminToolsTitle);
+      const secret = prompt("請輸入管理員密碼：");
       if (!secret) return;
 
       try {
@@ -910,6 +909,33 @@
         if (result.success) loadSessions();
       } catch (e) {
         alert("❌ 同步失敗！");
+      }
+    }
+
+    // 🚫 管理員新增黑名單 (只需管理員密碼 + 球友姓名)
+    async function adminAddBlacklist() {
+      const secret = prompt("請輸入管理員密碼：");
+      if (!secret) return;
+
+      const targetName = prompt("請輸入要加入黑名單的「球友姓名」：");
+      if (!targetName || !targetName.trim()) {
+        alert("❌ 姓名不能為空白！");
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/admin/blacklist', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            'x-admin-secret': secret 
+          },
+          body: JSON.stringify({ name: targetName.trim() })
+        });
+        const data = await res.json();
+        alert(data.message);
+      } catch (e) {
+        alert("❌ 操作失敗，請檢查伺服器連線。");
       }
     }
   </script>

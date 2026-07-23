@@ -76,6 +76,28 @@ function maskEmail(email) {
   return `${user.substring(0, 2)}***${user.slice(-1)}@${domain}`;
 }
 
+// 🕒 取得台北當前 Date 物件
+function getTaipeiNow() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+}
+
+// 📅 精準推算目標日期格式 YYYY-MM-DD
+// 邏輯：球敘當天跨過深夜 24:00 (即次日 00:00) 之後，才輪播為下週場次
+function getSessionTargetDate(dayOfWeekTarget) {
+  const now = getTaipeiNow();
+  const dayOfWeek = now.getDay();
+  let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
+  
+  const target = new Date(now);
+  target.setDate(now.getDate() + daysUntil);
+
+  const yyyy = target.getFullYear();
+  const mm = String(target.getMonth() + 1).padStart(2, '0');
+  const dd = String(target.getDate()).padStart(2, '0');
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 // 🔑 取得 Google 試算表物件
 async function getGoogleDoc(spreadsheetId) {
   const jsonKeyString = process.env.GOOGLE_JSON_KEY;
@@ -98,7 +120,7 @@ async function getGoogleDoc(spreadsheetId) {
 
 // 🔄 更新會員名單快取
 async function refreshMemberCache() {
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const now = Date.now();
   if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) return;
 
   try {
@@ -141,7 +163,7 @@ async function checkMemberStatus(userEmail) {
   }
 }
 
-// 🚦【試算表防排隊與全量覆寫 Queue】
+// 🚦【試算表同步 Queue】
 const pendingSyncSessions = new Set();
 let syncTimer = null;
 
@@ -197,6 +219,29 @@ async function processSheetSyncQueue() {
   }
 }
 
+// ⚙️ 核心輔助函式：全量重新計算狀態與剩餘名額
+function recalculateSessionStatus(sessionId) {
+  const targetSession = sessions.find(s => s.id === sessionId);
+  if (!targetSession) return;
+
+  const list = sessionAttendees[sessionId] || [];
+  let currentSeatsUsed = 0;
+  let currentWaitlistCount = 0;
+
+  list.forEach((user, idx) => {
+    if (idx < targetSession.limit) {
+      user.status = '正取';
+      currentSeatsUsed++;
+    } else {
+      currentWaitlistCount++;
+      user.status = `候補第 ${currentWaitlistCount} 位`;
+    }
+  });
+
+  seatsCache[sessionId] = Math.max(0, targetSession.limit - currentSeatsUsed);
+  waitlistCache[sessionId] = currentWaitlistCount;
+}
+
 // 🔄 重載試算表至記憶體
 async function reloadFromSheet() {
   try {
@@ -212,12 +257,7 @@ async function reloadFromSheet() {
 
     for (const s of sessions) {
       const dateStr = getSessionTargetDate(s.day);
-      
-      let sheet = doc.sheetsByTitle[dateStr];
-      if (!sheet) {
-        const altDateStr = dateStr.replace(/-/g, '/');
-        sheet = doc.sheetsByTitle[altDateStr];
-      }
+      let sheet = doc.sheetsByTitle[dateStr] || doc.sheetsByTitle[dateStr.replace(/-/g, '/')];
 
       if (sheet) {
         const rows = await sheet.getRows();
@@ -238,7 +278,6 @@ async function reloadFromSheet() {
 
           const isMemberFromSheet = statusRaw.includes('(會員)');
           let cleanStatus = statusRaw.replace(/\(會員\)|\(非會員\)/g, '').trim();
-
           const attendeeEmail = email || `anonymous_${Math.random()}`;
 
           const alreadyLoaded = sessionAttendees[s.id].some(a => a.email === attendeeEmail && email !== '');
@@ -270,51 +309,15 @@ async function reloadFromSheet() {
     console.log('✅ 試算表資料成功同步至記憶體！');
   } catch (err) {
     console.error('❌ 重載試算表失敗：', err.message);
-    throw err;
   }
 }
 
-// ⚙️ 核心輔助函式：全量重新計算狀態與剩餘名額
-function recalculateSessionStatus(sessionId) {
-  const targetSession = sessions.find(s => s.id === sessionId);
-  if (!targetSession) return;
-
-  const list = sessionAttendees[sessionId] || [];
-  let currentSeatsUsed = 0;
-  let currentWaitlistCount = 0;
-
-  list.forEach((user, idx) => {
-    if (idx < targetSession.limit) {
-      user.status = '正取';
-      currentSeatsUsed++;
-    } else {
-      currentWaitlistCount++;
-      user.status = `候補第 ${currentWaitlistCount} 位`;
-    }
-  });
-
-  seatsCache[sessionId] = targetSession.limit - currentSeatsUsed;
-  waitlistCache[sessionId] = currentWaitlistCount;
-}
-
-function getSessionTargetDate(dayOfWeekTarget) {
-  const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
-  const dayOfWeek = today.getDay();
-  let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
-  
-  if (daysUntil === 0) daysUntil = 0; 
-  
-  const nextDate = new Date(today);
-  nextDate.setDate(today.getDate() + daysUntil);
-  return `${nextDate.getFullYear()}-${nextDate.getMonth() + 1}-${nextDate.getDate()}`;
-}
-
-// 健康檢查 Endpoint (非常適合搭配 UptimeRobot 避開休眠)
+// 健康檢查
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次
+// API: 取得場次資訊（包含 18:00 截止後依舊回傳完整人員名單）
 app.get('/api/sessions', async (req, res) => {
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const now = getTaipeiNow();
   const token = req.query.token;
 
   let isUserMember = false;
@@ -333,20 +336,17 @@ app.get('/api/sessions', async (req, res) => {
 
   let result = sessions.map(s => {
     const dateStr = getSessionTargetDate(s.day);
-    const dateParts = dateStr.split('-');
-    const displayDate = `${dateParts[1]}/${dateParts[2]}`;
-    const targetDate = new Date(dateStr);
+    const [yyyy, mm, dd] = dateStr.split('-');
+    const displayDate = `${parseInt(mm)}/${parseInt(dd)}`;
     
-    const memberOpenTime = new Date(targetDate);
-    memberOpenTime.setDate(targetDate.getDate() - 1);
-    memberOpenTime.setHours(18, 0, 0, 0);
+    // 精準指定台北時間 +08:00
+    const memberOpenTime = new Date(`${dateStr}T18:00:00+08:00`);
+    memberOpenTime.setDate(memberOpenTime.getDate() - 1);
 
-    const nonMemberOpenTime = new Date(targetDate);
-    nonMemberOpenTime.setDate(targetDate.getDate() - 1);
-    nonMemberOpenTime.setHours(22, 0, 0, 0);
+    const nonMemberOpenTime = new Date(`${dateStr}T22:00:00+08:00`);
+    nonMemberOpenTime.setDate(nonMemberOpenTime.getDate() - 1);
 
-    const closeTime = new Date(targetDate);
-    closeTime.setHours(18, 0, 0, 0);
+    const closeTime = new Date(`${dateStr}T18:00:00+08:00`);
 
     let isAfterOpen = isUserMember ? (now >= memberOpenTime) : (now >= nonMemberOpenTime);
     let isBeforeClose = now < closeTime;
@@ -372,8 +372,9 @@ app.get('/api/sessions', async (req, res) => {
         openTimeNoticeEn = `Opens ${nmMonth}/${nmDate} 22:00 (Closes at 18:00 on game day)`;
       }
     }
-    const isUserRegistered = userEmail ? (registeredEmails[s.id] && registeredEmails[s.id].has(userEmail)) : false;
+    const isUserRegistered = userEmail ? registeredEmails[s.id]?.has(userEmail) : false;
 
+    // 💡 即使已過 18:00 截止時間，此名單陣列依然完整回傳
     const sanitizedAttendees = (sessionAttendees[s.id] || []).map(a => ({
       name: a.name,
       email: maskEmail(a.email),
@@ -399,7 +400,7 @@ app.get('/api/sessions', async (req, res) => {
   res.json({ isMember: isUserMember, sessions: result });
 });
 
-// API: 搶位與候補 (已補強時間攔截機制)
+// API: 搶位與候補
 app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
@@ -409,12 +410,10 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   const targetSession = sessions.find(s => s.id === sessionId);
   if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
 
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const now = getTaipeiNow();
   const dateStr = getSessionTargetDate(targetSession.day);
-  const closeTime = new Date(dateStr);
-  closeTime.setHours(18, 0, 0, 0);
+  const closeTime = new Date(`${dateStr}T18:00:00+08:00`);
 
-  // 1. 檢查是否過期
   if (now >= closeTime) {
     return res.json({ success: false, message: "⏰ 該場次已於當天 18:00 截止報名，無法再送出報名！" });
   }
@@ -439,15 +438,11 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     }
   }
 
-  // 2. 💡【關鍵防護】嚴格檢查是否已達開放時間（防止偷跑）
-  const targetDate = new Date(dateStr);
-  const memberOpenTime = new Date(targetDate);
-  memberOpenTime.setDate(targetDate.getDate() - 1);
-  memberOpenTime.setHours(18, 0, 0, 0);
+  const memberOpenTime = new Date(`${dateStr}T18:00:00+08:00`);
+  memberOpenTime.setDate(memberOpenTime.getDate() - 1);
 
-  const nonMemberOpenTime = new Date(targetDate);
-  nonMemberOpenTime.setDate(targetDate.getDate() - 1);
-  nonMemberOpenTime.setHours(22, 0, 0, 0);
+  const nonMemberOpenTime = new Date(`${dateStr}T22:00:00+08:00`);
+  nonMemberOpenTime.setDate(nonMemberOpenTime.getDate() - 1);
 
   const requiredOpenTime = memberInfo.isMember ? memberOpenTime : nonMemberOpenTime;
 
@@ -465,11 +460,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     finalUserName = customName.trim();
   }
 
-  const isAlreadyRegisteredInSet = registeredEmails[sessionId] && registeredEmails[sessionId].has(cleanEmail);
-  const isAlreadyInList = sessionAttendees[sessionId] && sessionAttendees[sessionId].some(a => a.email.toLowerCase() === cleanEmail);
-
-  if (isAlreadyRegisteredInSet || isAlreadyInList) {
-    registeredEmails[sessionId].add(cleanEmail);
+  if (registeredEmails[sessionId].has(cleanEmail)) {
     return res.json({ success: false, message: "❌ 您已經報名過此場次囉！請勿重複送出。" });
   }
 
