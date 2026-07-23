@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const cors = require('cors'); // 💡 補上 CORS 套件，解決前端連線失敗問題
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT, OAuth2Client } = require('google-auth-library');
 const rateLimit = require('express-rate-limit');
@@ -9,6 +10,9 @@ const PORT = process.env.PORT || 3000;
 
 // 💡 Render 部署必備：信任 Proxy 以取得真實 User IP
 app.set('trust proxy', 1);
+
+// 🔒 允許所有跨網域請求 (解決前端存取時跳出伺服器錯誤的問題)
+app.use(cors());
 
 // 🔒 全域系統開關 (預設為 true 開放中)
 let isSystemActive = true;
@@ -315,7 +319,7 @@ async function reloadFromSheet() {
 // 健康檢查
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次資訊（包含 18:00 截止後依舊回傳完整人員名單）
+// API: 取得場次資訊（當天 18:00 截止後依舊完整回傳人員名單）
 app.get('/api/sessions', async (req, res) => {
   const now = getTaipeiNow();
   const token = req.query.token;
@@ -374,7 +378,7 @@ app.get('/api/sessions', async (req, res) => {
     }
     const isUserRegistered = userEmail ? registeredEmails[s.id]?.has(userEmail) : false;
 
-    // 💡 即使已過 18:00 截止時間，此名單陣列依然完整回傳
+    // 💡 即使過 18:00 截止時間，此名單陣列依然完整回傳給前端顯示
     const sanitizedAttendees = (sessionAttendees[s.id] || []).map(a => ({
       name: a.name,
       email: maskEmail(a.email),
