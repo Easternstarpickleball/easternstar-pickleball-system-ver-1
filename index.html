@@ -312,7 +312,8 @@
         <span data-i18n="noticeContent">
           1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>
           2. 搶位時若剛好跨過開放秒數，可按 <strong>重新整理</strong> 取得最新狀態。<br>
-          3. 非會員報名時請務必填寫中文真實大名以利核對。
+          3. 當天 <strong>18:00</strong> 後停止報名與取消報名。<br>
+          4. 非會員報名時請務必填寫中文真實大名以利核對。
         </span>
       </div>
 
@@ -417,7 +418,7 @@
         appTitle: "匹克球團搶位系統",
         contactAdmin: "✉️ 聯絡管理員",
         noticeTitle: "💡 報名溫馨提醒",
-        noticeContent: "1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>2. 搶位時若剛好跨過開放秒數，可按 <strong>重新整理</strong> 取得最新狀態。<br>3. 非會員報名時請務必填寫中文真實大名以利核對。",
+        noticeContent: "1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>2. 搶位時若剛好跨過開放秒數，可按 <strong>重新整理</strong> 取得最新狀態。<br>3. 當天 <strong>18:00</strong> 後停止報名與取消報名。<br>4. 非會員報名時請務必填寫中文真實大名以利核對。",
         selectSessionHint: "請點選下方場次卡片進行報名",
         remainingSeatsLabel: "剩餘名額：",
         waitlistLabel: "候補位置：",
@@ -452,7 +453,7 @@
         appTitle: "Pickleball Signup System",
         contactAdmin: "✉️ Contact Admin",
         noticeTitle: "💡 Notice",
-        noticeContent: "1. Members: Opens 18:00 day before session. Non-members: Opens 22:00.<br>2. Please refresh at opening time to update page.<br>3. Non-members must enter real full name for verification.",
+        noticeContent: "1. Members: Opens 18:00 day before session. Non-members: Opens 22:00.<br>2. Please refresh at opening time to update page.<br>3. Signups and cancellations close at <strong>18:00</strong> on session day.<br>4. Non-members must enter real full name for verification.",
         selectSessionHint: "Please select a session card below",
         remainingSeatsLabel: "Seats Left: ",
         waitlistLabel: "Waitlist Spot: ",
@@ -504,6 +505,15 @@
       } else {
         loadSessions();
       }
+    }
+
+    // 🗓️ 取得本地 YYYY-MM-DD 日期的輔助函式
+    function getTodayDateStr() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
 
     window.onload = function() {
@@ -631,9 +641,7 @@
         const btnContainer = document.getElementById('session-buttons');
         btnContainer.innerHTML = '';
 
-        // 🕒 取得今天的日期 (格式 YYYY-MM-DD)
-        const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
+        const todayStr = getTodayDateStr();
 
         sessions.forEach(s => {
           const prefix = getDayPrefix(s);
@@ -644,12 +652,12 @@
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
 
-          // 🕒 判斷是否為「未來的場次」
+          // 🕒 判斷是否為「未來場次」
           const isFutureSession = s.dateStr > todayStr;
 
-          // 💡 精準邏輯：
+          // 💡 邏輯：
           // 1. 如果是「未來的場次」且「未開放」 -> 保留灰階與鎖定 (disabled = true)
-          // 2. 如果是「當天」或「已開放」場次 -> 絕不灰階鎖定，維持點選看名單 (disabled = false)
+          // 2. 如果是「當天」或「已開放」場次 -> 絕不灰階鎖定，維持點選查看名單 (disabled = false)
           if (!s.isOpen && isFutureSession) {
             btn.disabled = true;
           } else {
@@ -720,6 +728,25 @@
       const cancelBtn = document.getElementById('btn-cancel');
       const t = i18n[currentLang];
 
+      const now = new Date();
+      const todayStr = getTodayDateStr();
+      const currentHour = now.getHours();
+
+      // 🕒 判斷是否為當天 18:00 以後或過去場次
+      const isPast = session.dateStr < todayStr;
+      const isToday = session.dateStr === todayStr;
+      const isClosedAfter18 = isToday && currentHour >= 18;
+
+      if (isPast || isClosedAfter18) {
+        // ⏰ 當天 18:00 後或過去場次：禁止報名與禁止取消
+        grabBtn.disabled = true;
+        grabBtn.innerText = currentLang === 'en' ? '⏰ Signup Closed (After 18:00)' : '⏰ 報名已截止 (18:00後)';
+
+        cancelBtn.disabled = true;
+        cancelBtn.innerText = currentLang === 'en' ? '⏰ Cancel Closed (After 18:00)' : '⏰ 禁止取消 (18:00後)';
+        return;
+      }
+
       if (session.isUserRegistered) {
         grabBtn.disabled = true;
         grabBtn.innerText = t.btnCompleted;
@@ -754,6 +781,14 @@
     async function startGrab() {
       if (!selectedSession || !userToken) {
         alert(currentLang === 'en' ? "Please login with Google first!" : "請先登入 Google 帳號！");
+        return;
+      }
+
+      // 🕒 時間二次校驗 (防禦性程式碼)
+      const now = new Date();
+      const todayStr = getTodayDateStr();
+      if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
+        alert(currentLang === 'en' ? "Signups are closed after 18:00 on session day!" : "當天 18:00 後已截止報名！");
         return;
       }
 
@@ -797,6 +832,15 @@
 
     async function startCancel() {
       if (!selectedSession || !userToken) return;
+
+      // 🕒 時間二次校驗 (防禦性程式碼)
+      const now = new Date();
+      const todayStr = getTodayDateStr();
+      if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
+        alert(currentLang === 'en' ? "Cancellations are not allowed after 18:00 on session day!" : "當天 18:00 後已禁止取消報名！");
+        return;
+      }
+
       const title = (currentLang === 'en' && selectedSession.nameEn) ? selectedSession.nameEn : selectedSession.name;
       if (!confirm(`確定要取消【${title}】的報名嗎？`)) return;
 
