@@ -165,7 +165,7 @@
 
     .btn-submit { background-color: #38a169; color: white; box-shadow: 0 4px 12px rgba(56, 161, 105, 0.3); }
     .btn-submit:hover:not(:disabled) { background-color: #2f855a; transform: translateY(-1px); }
-    .btn-submit:disabled { background: #cbd5e0; box-shadow: none; cursor: not-allowed; opacity: 0.75; }
+    .btn-submit:disabled { background: #cbd5e0; box-shadow: none; cursor: not-allowed; }
 
     .btn-cancel-action { background-color: #e53e3e; color: white; box-shadow: 0 4px 12px rgba(229, 62, 62, 0.3); }
     .btn-cancel-action:hover:not(:disabled) { background-color: #c53030; transform: translateY(-1px); }
@@ -430,8 +430,6 @@
         btnGrabMain: "🔥 立刻報名（正取）",
         btnGrabWaitlist: "⚠️ 搶候補位",
         btnCompleted: "✅ 已完成報名",
-        btnClosed: "⏰ 報名已截止",
-        btnNotOpenYet: "⏰ 尚未開放報名",
         btnCancel: "取消報名",
         attendeeListTitle: "📋 報名名單",
         realtimeUpdate: "(即時更新)",
@@ -467,8 +465,6 @@
         btnGrabMain: "🔥 Sign Up Now",
         btnGrabWaitlist: "⚠️ Join Waitlist",
         btnCompleted: "✅ Registered",
-        btnClosed: "⏰ Registration Closed",
-        btnNotOpenYet: "⏰ Not Open Yet",
         btnCancel: "Cancel Registration",
         attendeeListTitle: "📋 Attendee List",
         realtimeUpdate: "(Live Update)",
@@ -635,6 +631,10 @@
         const btnContainer = document.getElementById('session-buttons');
         btnContainer.innerHTML = '';
 
+        // 🕒 取得今天的日期 (格式 YYYY-MM-DD)
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+
         sessions.forEach(s => {
           const prefix = getDayPrefix(s);
           const btn = document.createElement('button');
@@ -644,7 +644,18 @@
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
 
-          // 💡 所有場次皆可點擊（不設定 disabled），讓使用者點選查看名單
+          // 🕒 判斷是否為「未來的場次」
+          const isFutureSession = s.dateStr > todayStr;
+
+          // 💡 精準邏輯：
+          // 1. 如果是「未來的場次」且「未開放」 -> 保留灰階與鎖定 (disabled = true)
+          // 2. 如果是「當天」或「已開放」場次 -> 絕不灰階鎖定，維持點選看名單 (disabled = false)
+          if (!s.isOpen && isFutureSession) {
+            btn.disabled = true;
+          } else {
+            btn.disabled = false;
+          }
+
           let statusText = "";
           if (s.isOpen) {
             if (s.remainingSeats > 0) {
@@ -658,15 +669,13 @@
             }
           } else {
             const timeNotice = (currentLang === 'en' && s.openTimeStrEn) ? s.openTimeStrEn : s.openTimeStr;
-            statusText = `🔒 ${timeNotice || '尚未開放/已截止'}`;
+            statusText = `🔒 ${timeNotice || '尚未開放'}`;
           }
 
           let userTag = s.isUserRegistered ? (currentLang === 'en' ? ' [Registered]' : ' [已報名]') : '';
           btn.innerText = `${sessionTitle} (${s.displayDate}) - ${statusText}${userTag}`;
-          
-          // 設定點擊事件，切換場次
-          btn.onclick = () => selectSession(s);
 
+          btn.onclick = () => selectSession(s);
           btnContainer.appendChild(btn);
 
           if (isSelected) {
@@ -706,44 +715,23 @@
       renderAttendees(session.attendees);
     }
 
-    // 💡 根據當前點選的場次日期，動態計算 18:00 截止時間並切換按鈕狀態
     function updateActionButtons(session) {
       const grabBtn = document.getElementById('btn-grab');
       const cancelBtn = document.getElementById('btn-cancel');
       const t = i18n[currentLang];
 
-      // 🕒 計算該場次是否已過 18:00 截止時間
-      let isPast18 = false;
-      if (session.dateStr) {
-        const now = new Date();
-        const closeTime = new Date(`${session.dateStr}T18:00:00+08:00`);
-        if (now >= closeTime) {
-          isPast18 = true;
-        }
-      }
-
-      if (isPast18) {
-        // 🔴 情況 A：已過 18:00 截止時間 -> 搶位按鈕鎖定，顯示已截止
-        grabBtn.disabled = true;
-        grabBtn.innerText = t.btnClosed || "⏰ 報名已截止";
-        cancelBtn.disabled = true;
-        cancelBtn.innerText = t.btnCancel;
-      } else if (!session.isOpen) {
-        // ⏰ 情況 B：未過期但尚未開放報名
-        grabBtn.disabled = true;
-        grabBtn.innerText = t.btnNotOpenYet || "⏰ 尚未開放報名";
-        cancelBtn.disabled = true;
-        cancelBtn.innerText = t.btnCancel;
-      } else if (session.isUserRegistered) {
-        // 🟡 情況 C：未過期且已完成報名 -> 顯示已完成，開放取消按鈕
+      if (session.isUserRegistered) {
         grabBtn.disabled = true;
         grabBtn.innerText = t.btnCompleted;
+      } else {
+        grabBtn.disabled = false;
+        grabBtn.innerText = session.remainingSeats > 0 ? t.btnGrabMain : t.btnGrabWaitlist;
+      }
+
+      if (session.isUserRegistered) {
         cancelBtn.disabled = false;
         cancelBtn.innerText = `❌ ${t.btnCancel}`;
       } else {
-        // 🟢 情況 D：未過期且開放報名中 -> 顯示綠色可報名按鈕
-        grabBtn.disabled = false;
-        grabBtn.innerText = session.remainingSeats > 0 ? t.btnGrabMain : t.btnGrabWaitlist;
         cancelBtn.disabled = true;
         cancelBtn.innerText = t.btnCancel;
       }
@@ -978,8 +966,6 @@
       const target = prompt("請輸入要解除黑名單的「球友姓名」或「Email」：");
       if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
 
-      console.log("🚀 [前端發送] 準備呼叫解除黑名單 API，目標：", target.trim());
-
       try {
         const apiUrl = '/api/admin/remove-blacklist'; 
 
@@ -996,7 +982,6 @@
           }) 
         });
 
-        console.log("📩 [前端接收] 伺服器回應 HTTP 狀態碼：", res.status);
         const data = await res.json();
         alert(data.message);
 
