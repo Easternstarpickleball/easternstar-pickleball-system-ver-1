@@ -145,7 +145,7 @@ async function reloadBlacklistFromSheet() {
       const name = (row.get('姓名') || row.get('Email/姓名') || '').trim();
       const email = (row.get('Email') || row.get('Email/姓名') || '').trim().toLowerCase();
       
-      // 相容舊資料格式 (如果之前只有 single string)
+      // 相容舊資料格式
       if (name || email) {
         blacklistItems.push({
           name: name.includes('@') ? '' : name,
