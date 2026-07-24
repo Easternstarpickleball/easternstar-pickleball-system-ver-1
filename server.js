@@ -41,7 +41,7 @@ const apiLimiter = rateLimit({
 
 const grabLimiter = rateLimit({
   windowMs: 10 * 1000, 
-  max: 5, 
+  max: 3, 
   skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret',
   message: { success: false, message: "⚠️ 搶位太快囉，請勿點擊過快！" }
 });
