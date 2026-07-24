@@ -34,14 +34,14 @@ app.use(express.static(path.join(__dirname, '/')));
 // 🔒 防刷機制 (Rate Limiter)
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, 
-  max: 100, 
+  max: 300, 
   skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret',
   message: { success: false, message: "⚠️ 請求過於頻繁，請稍後再試！" }
 });
 
 const grabLimiter = rateLimit({
   windowMs: 10 * 1000, 
-  max: 100, 
+  max: 5, 
   skip: (req) => req.headers['x-stress-test'] === 'pickleball-test-secret',
   message: { success: false, message: "⚠️ 搶位太快囉，請勿點擊過快！" }
 });
