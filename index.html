@@ -368,7 +368,7 @@
 
       <div id="non-member-name-box" class="input-box" style="display: none;">
         <label for="custom-name" data-i18n="inputNameLabel">✍️ 請輸入中文大名：</label>
-        <input type="text" id="custom-name" placeholder="例如：王小明">
+        <input type="text" id="custom-name" placeholder="例如：王小明" oninput="saveCustomName(this.value)">
       </div>
 
       <div id="session-selector" class="session-container">
@@ -557,6 +557,19 @@
       }
     };
 
+    // 💾 儲存與讀取非會員姓名快取
+    function saveCustomName(val) {
+      localStorage.setItem('pickleball_custom_name', val);
+    }
+
+    function loadCustomName() {
+      const savedName = localStorage.getItem('pickleball_custom_name');
+      const inputElem = document.getElementById('custom-name');
+      if (savedName && inputElem) {
+        inputElem.value = savedName;
+      }
+    }
+
     // 🌐 單一按鈕切換語言功能
     function toggleLanguage() {
       currentLang = currentLang === 'zh' ? 'en' : 'zh';
@@ -589,6 +602,35 @@
       return `${year}-${month}-${day}`;
     }
 
+    // 🔐 檢查登入與 3 分鐘過期機制
+    function checkTokenExpiration() {
+      const savedToken = localStorage.getItem('pickleball_token');
+      const loginTime = localStorage.getItem('pickleball_login_time');
+      const THREE_MINUTES_MS = 3 * 60 * 1000; // 3分鐘
+
+      if (!savedToken || !loginTime) {
+        clearAuthStorage();
+        return false;
+      }
+
+      const now = Date.now();
+      if (now - parseInt(loginTime, 10) > THREE_MINUTES_MS) {
+        // 已超過 3 分鐘，清除驗證並通知
+        clearAuthStorage();
+        alert(currentLang === 'en' ? "Session expired after 3 minutes. Please re-authenticate Google login." : "登入時效（3分鐘）已到期，請重新驗證 Google 帳號！");
+        location.reload();
+        return false;
+      }
+
+      return true;
+    }
+
+    function clearAuthStorage() {
+      localStorage.removeItem('pickleball_token');
+      localStorage.removeItem('pickleball_login_time');
+      userToken = null;
+    }
+
     window.onload = function() {
       // 初始化深色模式主題
       if (localStorage.getItem('app_theme') === 'dark') {
@@ -596,9 +638,10 @@
       }
 
       applyLanguage();
+      loadCustomName();
 
       const savedToken = localStorage.getItem('pickleball_token');
-      if (savedToken) {
+      if (savedToken && checkTokenExpiration()) {
         try {
           const payload = parseJwt(savedToken);
           if (payload && payload.exp * 1000 > Date.now() + 10000) {
@@ -607,13 +650,11 @@
             loadSessions();
             startPolling();
           } else {
-            localStorage.removeItem('pickleball_token');
-            userToken = null;
+            clearAuthStorage();
             loadSessions();
           }
         } catch (e) {
-          localStorage.removeItem('pickleball_token');
-          userToken = null;
+          clearAuthStorage();
           loadSessions();
         }
       } else {
@@ -624,6 +665,7 @@
     function handleCredentialResponse(response) {
       userToken = response.credential;
       localStorage.setItem('pickleball_token', userToken);
+      localStorage.setItem('pickleball_login_time', Date.now().toString()); // 紀錄登入時間
       const responsePayload = parseJwt(userToken);
       showLoggedInState(responsePayload.name, responsePayload.email);
       loadSessions();
@@ -638,12 +680,15 @@
     }
 
     function logout() {
-      localStorage.removeItem('pickleball_token');
+      clearAuthStorage();
       location.reload();
     }
 
     function startPolling() {
-      if (!pollInterval) pollInterval = setInterval(loadSessions, 5000);
+      if (!pollInterval) pollInterval = setInterval(() => {
+        if (userToken && !checkTokenExpiration()) return;
+        loadSessions();
+      }, 5000);
     }
 
     function parseJwt(token) {
@@ -715,6 +760,7 @@
         const nameBox = document.getElementById('non-member-name-box');
         if (nameBox) {
           nameBox.style.display = (userToken && !isCurrentUserMember) ? 'block' : 'none';
+          loadCustomName(); // 確保重新整理或資料載入時自動帶入輸入過的名稱
         }
 
         const btnContainer = document.getElementById('session-buttons');
@@ -852,6 +898,8 @@
     }
 
     async function startGrab() {
+      if (!checkTokenExpiration()) return;
+
       if (!selectedSession || !userToken) {
         alert(currentLang === 'en' ? "Please login with Google first!" : "請先登入 Google 帳號！");
         return;
@@ -872,6 +920,7 @@
           document.getElementById('custom-name').focus();
           return;
         }
+        saveCustomName(customNameVal); // 送出前確保保存至 LocalStorage
       }
 
       const grabBtn = document.getElementById('btn-grab');
@@ -903,6 +952,8 @@
     }
 
     async function startCancel() {
+      if (!checkTokenExpiration()) return;
+
       if (!selectedSession || !userToken) return;
 
       const now = new Date();
