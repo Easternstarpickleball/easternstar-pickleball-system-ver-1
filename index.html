@@ -151,13 +151,13 @@
       margin-bottom: 12px;
     }
     
-    /* 📅 場次按鈕（字體放大、支援換行） */
+    /* 📅 場次按鈕 */
     .session-btn { 
       display: block; 
       width: 100%; 
       margin: 14px 0; 
       padding: 18px 16px; 
-      font-size: 19px; /* 🔤 按鈕資料字型放大 */
+      font-size: 19px; 
       line-height: 1.4;
       border-radius: 14px; 
       cursor: pointer; 
@@ -194,7 +194,7 @@
     .action-btn-group button {
       flex: 1;
       padding: 18px 14px;
-      font-size: 20px; /* 🔤 按鈕字型放大 */
+      font-size: 20px;
       font-weight: bold;
       border-radius: 12px;
       border: none;
@@ -448,18 +448,21 @@
       card.classList.toggle('open');
     }
 
+    // 💡 更新主題按鈕文字（支援雙語）
+    function updateThemeButton() {
+      const isDark = document.body.classList.contains('dark-mode');
+      const themeBtn = document.getElementById('theme-btn');
+      if (themeBtn) {
+        themeBtn.innerText = isDark ? i18n[currentLang].themeLight : i18n[currentLang].themeDark;
+      }
+    }
+
     // 🌙 深淺主題切換邏輯
     function toggleTheme() {
       document.body.classList.toggle('dark-mode');
       const isDark = document.body.classList.contains('dark-mode');
       localStorage.setItem('app_theme', isDark ? 'dark' : 'light');
-      document.getElementById('theme-btn').innerText = isDark ? '☀️ 亮色' : '🌙 深色';
-    }
-
-    // 初始化主題
-    if (localStorage.getItem('app_theme') === 'dark') {
-      document.body.classList.add('dark-mode');
-      document.getElementById('theme-btn').innerText = '☀️ 亮色';
+      updateThemeButton();
     }
 
     // 📧 聯絡管理員
@@ -509,6 +512,8 @@
         adminReorder: "↕️ 調整球友順序",
         adminSync: "🔄 強制同步試算表",
         adminBlacklistManage: "🚫 黑名單管理",
+        themeDark: "🌙 深色",
+        themeLight: "☀️ 亮色",
         seatsCount: "人",
         waitlistRank: "第 {num} 位",
         memberTag: " (會員)",
@@ -543,6 +548,8 @@
         adminReorder: "↕️ Reorder Player",
         adminSync: "🔄 Force Sync Sheet",
         adminBlacklistManage: "🚫 Blacklist Mgmt",
+        themeDark: "🌙 Dark",
+        themeLight: "☀️ Light",
         seatsCount: " Left",
         waitlistRank: "No. {num}",
         memberTag: " (Member)",
@@ -565,6 +572,8 @@
         }
       });
 
+      updateThemeButton();
+
       if (selectedSession) {
         selectSession(selectedSession);
       } else {
@@ -581,7 +590,13 @@
     }
 
     window.onload = function() {
+      // 初始化深色模式主題
+      if (localStorage.getItem('app_theme') === 'dark') {
+        document.body.classList.add('dark-mode');
+      }
+
       applyLanguage();
+
       const savedToken = localStorage.getItem('pickleball_token');
       if (savedToken) {
         try {
@@ -741,7 +756,6 @@
 
           let userTag = s.isUserRegistered ? (currentLang === 'en' ? ' [Registered]' : ' [已報名]') : '';
           
-          // ↵ 日期 (s.displayDate) 後加入 <br> 換行
           btn.innerHTML = `${sessionTitle} (${s.displayDate})<br><span style="font-size: 0.9em; font-weight: normal;">${statusText}${userTag}</span>`;
 
           btn.onclick = () => selectSession(s);
