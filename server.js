@@ -234,8 +234,11 @@ async function refreshMemberCache() {
 }
 
 // ⏰ 背景任務：每 5 分鐘自動更新會員名單快取
-setInterval(() => {
-  refreshMemberCache();
+setInterval(async () => {
+  if (pendingSyncSessions.size === 0 || isSheetSyncing) return;
+  isSheetSyncing = true;
+  await processSheetSyncQueue();
+  isSheetSyncing = false;
 }, 5 * 60 * 1000);
 
 // 🔍 比對會員身分
@@ -634,7 +637,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
 });
 
 // API: 取消報名
-app.post('/api/cancel', async (req, res) => {
+app.post('/api/cancel', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
   }
