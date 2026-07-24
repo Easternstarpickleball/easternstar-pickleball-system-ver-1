@@ -17,7 +17,7 @@ app.use(cors());
 // 🔒 全域系統開關 (預設為 true 開放中)
 let isSystemActive = true;
 
-// 🔒 黑名單快取：改為儲存雙欄位物件陣列 [{ name: '...', email: '...' }]
+// 🔒 黑名單快取：儲存雙欄位物件陣列 [{ name: '...', email: '...' }]
 let blacklistItems = [];
 
 // 🔒 環境變數載入
@@ -71,7 +71,6 @@ sessions.forEach(s => {
 
 let memberMapCache = new Map();
 let lastFetchTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000;
 
 // 🔒 輔助函式：Email 脫敏
 function maskEmail(email) {
@@ -191,11 +190,8 @@ async function saveBlacklistToSheet() {
   }
 }
 
-// 🔄 更新會員名單快取
+// 🔄 更新會員名單快取（零延遲保護 API，可背景自動/手動觸發）
 async function refreshMemberCache() {
-  const now = Date.now();
-  if (memberMapCache.size > 0 && (now - lastFetchTime < CACHE_DURATION)) return;
-
   try {
     console.log('🔄 正在更新會員名單快取...');
     const doc = await getGoogleDoc(MEMBER_SPREADSHEET_ID);
@@ -226,17 +222,22 @@ async function refreshMemberCache() {
     });
 
     memberMapCache = newMap;
-    lastFetchTime = now;
+    lastFetchTime = Date.now();
     console.log(`✅ 會員快取更新完成！共抓取到 ${memberMapCache.size} 筆會員資料。`);
   } catch (err) {
     console.error('❌ 更新會員名單失敗：', err.message);
   }
 }
 
-// 🔍 比對會員身分
-async function checkMemberStatus(userEmail) {
+// ⏰ 背景任務：每 5 分鐘自動背景更新一次會員名單（不佔用搶位資源）
+setInterval(() => {
+  console.log('⏰ [背景任務] 自動更新會員名單快取...');
+  refreshMemberCache();
+}, 5 * 60 * 1000);
+
+// 🔍 比對會員身分 (純記憶體比對)
+function checkMemberStatus(userEmail) {
   if (!userEmail) return { isMember: false, userName: '非會員 / 未登記' };
-  await refreshMemberCache();
   const cleanEmail = userEmail.trim().toLowerCase();
   if (memberMapCache.has(cleanEmail)) {
     return { isMember: true, userName: memberMapCache.get(cleanEmail) };
@@ -245,16 +246,21 @@ async function checkMemberStatus(userEmail) {
   }
 }
 
-// 🚦【試算表同步 Queue】
+// 🚦【試算表寫入 Queue】批次備份機制，防止免費配額超標
 const pendingSyncSessions = new Set();
-let syncTimer = null;
+let isSheetSyncing = false;
 
 function triggerSheetSync(sessionId) {
   pendingSyncSessions.add(sessionId);
-  if (syncTimer) clearTimeout(syncTimer);
-
-  syncTimer = setTimeout(processSheetSyncQueue, 1000);
 }
+
+// ⏰ 背景任務：每 3 分鐘批次檢查並寫入有變動的試算表
+setInterval(async () => {
+  if (pendingSyncSessions.size === 0 || isSheetSyncing) return;
+  isSheetSyncing = true;
+  await processSheetSyncQueue();
+  isSheetSyncing = false;
+}, 3 * 60 * 1000);
 
 async function processSheetSyncQueue() {
   if (pendingSyncSessions.size === 0) return;
@@ -266,14 +272,22 @@ async function processSheetSyncQueue() {
     const targetSession = sessions.find(s => s.id === sessionId);
     if (!targetSession) continue;
 
-    const dateStr = getSessionTargetDate(targetSession.day);
     const attendees = sessionAttendees[sessionId] || [];
+
+    // 🛑 防護機制：如果該場次「完全沒有報名者」，絕不主動建立/清空工作表！
+    if (attendees.length === 0) {
+      console.log(`ℹ️ [跳過同步] 場次【${targetSession.name}】無報名資料，不提前建立試算表分頁。`);
+      continue;
+    }
+
+    const dateStr = getSessionTargetDate(targetSession.day);
 
     try {
       console.log(`🔄 正在同步【${targetSession.name} (${dateStr})】最新名單至 Google Sheet (共 ${attendees.length} 筆)...`);
       const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
       let sheet = doc.sheetsByTitle[dateStr];
 
+      // 只有有人報名時，才會在這裡創建對應日期的工作表
       if (!sheet) {
         sheet = await doc.addSheet({ 
           title: dateStr, 
@@ -294,9 +308,11 @@ async function processSheetSyncQueue() {
 
         await sheet.addRows(rowsToAdd);
       }
-      console.log(`✅ 【${targetSession.name}】Google Sheet 全量覆寫同步成功！`);
+      console.log(`✅ 【${targetSession.name}】Google Sheet 覆寫同步成功！`);
     } catch (err) {
       console.error(`❌ 同步 Google Sheet 失敗 [${sessionId}]：`, err.message);
+      // 若寫入失敗，加回佇列等待下一次重試
+      pendingSyncSessions.add(sessionId);
     }
   }
 }
@@ -329,6 +345,9 @@ async function reloadFromSheet() {
   try {
     console.log('🔄 正在從 Google 報名試算表重載資料至記憶體...');
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
+
+    // 重新載入會員快取
+    await refreshMemberCache();
 
     sessions.forEach(s => {
       seatsCache[s.id] = s.limit;
@@ -380,7 +399,7 @@ async function reloadFromSheet() {
 
             let isMemberFinal = isMemberFromSheet;
             if (!isMemberFromSheet && email) {
-              const checkResult = await checkMemberStatus(email);
+              const checkResult = checkMemberStatus(email);
               isMemberFinal = checkResult.isMember;
             }
 
@@ -418,7 +437,7 @@ app.get('/api/sessions', async (req, res) => {
     try {
       const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
       userEmail = ticket.getPayload().email.trim().toLowerCase();
-      const memberInfo = await checkMemberStatus(userEmail);
+      const memberInfo = checkMemberStatus(userEmail);
       isUserMember = memberInfo.isMember;
     } catch (e) {
       isUserMember = false;
@@ -521,7 +540,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     try {
       const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
       userEmail = ticket.getPayload().email;
-      memberInfo = await checkMemberStatus(userEmail);
+      memberInfo = checkMemberStatus(userEmail);
     } catch (authErr) {
       return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效，請重新登入！" });
     }
@@ -587,6 +606,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     ? "🎉 搶位成功！已為您保留正取名額！" 
     : `⚠️ 正取已滿！已成功為您登記為【${myRecord.status}】！`;
 
+  // 標記異動，交由背景 Timer 批次寫入 Google Sheet
   triggerSheetSync(sessionId);
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
@@ -676,7 +696,7 @@ app.post('/api/admin/add-user', async (req, res) => {
 
   if (registeredEmails[sessionId].has(cleanEmail)) return res.json({ success: false, message: "⚠️ 該球友已經在名單中了！" });
 
-  const memberInfo = await checkMemberStatus(cleanEmail);
+  const memberInfo = checkMemberStatus(cleanEmail);
 
   registeredEmails[sessionId].add(cleanEmail);
   sessionAttendees[sessionId].push({
@@ -871,6 +891,7 @@ app.post('/api/admin/reorder-user', async (req, res) => {
   res.json({ success: true, message: `✅ 已成功將【${movedUser.name}】調整至第 ${newPosition} 位！` });
 });
 
+// 🔄 管理員手動同步按鈕 (將 Google Sheet 最新的資料載入至記憶體，並批次備份)
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
@@ -878,7 +899,16 @@ app.post('/api/admin/sync', async (req, res) => {
   try {
     await reloadFromSheet();
     await reloadBlacklistFromSheet();
-    res.json({ success: true, message: "✅ 試算表與黑名單資料已成功強制同步！" });
+
+    // 將現有有人報名的場次觸發寫入，進行一次性備份
+    sessions.forEach(s => {
+      if (sessionAttendees[s.id] && sessionAttendees[s.id].length > 0) {
+        pendingSyncSessions.add(s.id);
+      }
+    });
+    await processSheetSyncQueue();
+
+    res.json({ success: true, message: "✅ 試算表與黑名單資料已成功強制同步完成！" });
   } catch (err) {
     res.status(500).json({ success: false, message: `❌ 同步失敗：${err.message}` });
   }
