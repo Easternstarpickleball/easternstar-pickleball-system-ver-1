@@ -108,7 +108,13 @@ async function getGoogleDoc(spreadsheetId) {
   const jsonKeyString = process.env.GOOGLE_JSON_KEY;
   if (!jsonKeyString) throw new Error('❌ 缺少必要的環境變數：GOOGLE_JSON_KEY');
 
-  let creds = JSON.parse(jsonKeyString);
+  let creds;
+  try {
+    creds = typeof jsonKeyString === 'string' ? JSON.parse(jsonKeyString) : jsonKeyString;
+  } catch(e) {
+    throw new Error('❌ GOOGLE_JSON_KEY JSON 解析錯誤');
+  }
+
   const clientEmail = creds.client_email;
   const privateKey = creds.private_key ? creds.private_key.replace(/\\n/g, '\n') : undefined;
 
@@ -188,7 +194,7 @@ async function saveBlacklistToSheet() {
   }
 }
 
-// 🔄 更新會員名單快取（零延遲保護 API，背景自動/手動觸發）
+// 🔄 更新會員名單快取
 async function refreshMemberCache() {
   try {
     console.log('🔄 正在更新會員名單快取...');
@@ -227,13 +233,12 @@ async function refreshMemberCache() {
   }
 }
 
-// ⏰ 背景任務：每 5 分鐘自動背景更新一次會員名單
+// ⏰ 背景任務：每 5 分鐘自動更新會員名單快取
 setInterval(() => {
-  console.log('⏰ [背景任務] 自動更新會員名單快取...');
   refreshMemberCache();
 }, 5 * 60 * 1000);
 
-// 🔍 比對會員身分 (純記憶體比對)
+// 🔍 比對會員身分
 function checkMemberStatus(userEmail) {
   if (!userEmail) return { isMember: false, userName: '非會員 / 未登記' };
   const cleanEmail = userEmail.trim().toLowerCase();
@@ -244,7 +249,30 @@ function checkMemberStatus(userEmail) {
   }
 }
 
-// 🚦【試算表寫入 Queue】批次備份機制，防止免費配額超標
+// ⚙️ 核心輔助函式：全量重新計算狀態與剩餘名額
+function recalculateSessionStatus(sessionId) {
+  const targetSession = sessions.find(s => s.id === sessionId);
+  if (!targetSession) return;
+
+  const list = sessionAttendees[sessionId] || [];
+  let currentSeatsUsed = 0;
+  let currentWaitlistCount = 0;
+
+  list.forEach((user, idx) => {
+    if (idx < targetSession.limit) {
+      user.status = '正取';
+      currentSeatsUsed++;
+    } else {
+      currentWaitlistCount++;
+      user.status = `候補第 ${currentWaitlistCount} 位`;
+    }
+  });
+
+  seatsCache[sessionId] = Math.max(0, targetSession.limit - currentSeatsUsed);
+  waitlistCache[sessionId] = currentWaitlistCount;
+}
+
+// 🚦【試算表寫入 Queue】批次備份機制
 const pendingSyncSessions = new Set();
 let isSheetSyncing = false;
 
@@ -270,19 +298,15 @@ async function processSheetSyncQueue() {
     const targetSession = sessions.find(s => s.id === sessionId);
     if (!targetSession) continue;
 
-    // 💡 關鍵修復：複製當下 moment 的名單快照，避免寫入期間有新報名而漏掉
     const snapshotAttendees = [...(sessionAttendees[sessionId] || [])];
 
-    // 🛑 防護機制：如果該場次「完全沒有報名者」，絕不主動建立/清空工作表！
     if (snapshotAttendees.length === 0) {
-      console.log(`ℹ️ [跳過同步] 場次【${targetSession.name}】無報名資料，不提前建立試算表分頁。`);
       continue;
     }
 
     const dateStr = getSessionTargetDate(targetSession.day);
 
     try {
-      console.log(`🔄 正在同步【${targetSession.name} (${dateStr})】最新名單至 Google Sheet (共 ${snapshotAttendees.length} 筆)...`);
       const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
       let sheet = doc.sheetsByTitle[dateStr];
 
@@ -307,41 +331,16 @@ async function processSheetSyncQueue() {
         await sheet.addRows(rowsToAdd);
       }
 
-      // 如果在寫入這幾秒內又有人報名，重新加回佇列補寫
       if (sessionAttendees[sessionId].length !== snapshotAttendees.length) {
-        console.log(`⚠️ 同步期間【${targetSession.name}】有新報名，標記下次補同步。`);
         pendingSyncSessions.add(sessionId);
       }
 
-      console.log(`✅ 【${targetSession.name}】Google Sheet 覆寫同步成功！`);
+      console.log(`✅ 【${targetSession.name}】Google Sheet 批次同步成功！`);
     } catch (err) {
       console.error(`❌ 同步 Google Sheet 失敗 [${sessionId}]：`, err.message);
       pendingSyncSessions.add(sessionId);
     }
   }
-}
-
-// ⚙️ 核心輔助函式：全量重新計算狀態與剩餘名額
-function recalculateSessionStatus(sessionId) {
-  const targetSession = sessions.find(s => s.id === sessionId);
-  if (!targetSession) return;
-
-  const list = sessionAttendees[sessionId] || [];
-  let currentSeatsUsed = 0;
-  let currentWaitlistCount = 0;
-
-  list.forEach((user, idx) => {
-    if (idx < targetSession.limit) {
-      user.status = '正取';
-      currentSeatsUsed++;
-    } else {
-      currentWaitlistCount++;
-      user.status = `候補第 ${currentWaitlistCount} 位`;
-    }
-  });
-
-  seatsCache[sessionId] = Math.max(0, targetSession.limit - currentSeatsUsed);
-  waitlistCache[sessionId] = currentWaitlistCount;
 }
 
 // 🔄 重載試算表至記憶體
@@ -511,7 +510,7 @@ app.get('/api/sessions', async (req, res) => {
   res.json({ isMember: isUserMember, sessions: result });
 });
 
-// API: 搶位與候補（已修復會員驗證）
+// API: 搶位與候補
 app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
@@ -538,18 +537,18 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     userEmail = req.body.testEmail || `test_user_${Math.random()}@test.com`;
     memberInfo = { isMember: true, userName: customName || '壓測測試員' };
   } else {
-    if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
+    if (!sessionId || !token) {
+      return res.status(400).json({ success: false, message: "❌ 缺少登入憑證 Token！請重新整理頁面登入。" });
+    }
 
     try {
       const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
       const payload = ticket.getPayload();
       userEmail = payload.email.trim().toLowerCase();
-      
-      // 💡 關鍵：從記憶體精準比對會員名單
       memberInfo = checkMemberStatus(userEmail);
     } catch (authErr) {
-      console.error("❌ Google Token 驗證失敗：", authErr.message);
-      return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效，請刷新頁面重新登入！" });
+      console.error("❌ Token 解析失敗：", authErr.message);
+      return res.status(401).json({ success: false, message: "❌ 登入驗證過期，請重新整理頁面並重新登入 Google 帳號！" });
     }
   }
 
@@ -581,7 +580,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
 
   let finalUserName = memberInfo.userName;
 
-  // 💡 只有當「非會員」時，才強制驗證中文大名！
+  // 💡 當且僅當「真的非會員」且非壓測時，才檢查大名！
   if (!memberInfo.isMember && !isStressTest) {
     if (!customName || customName.trim() === '') {
       return res.json({ success: false, message: "❌ 非會員請填寫「中文大名」！" });
@@ -615,7 +614,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     ? "🎉 搶位成功！已為您保留正取名額！" 
     : `⚠️ 正取已滿！已成功為您登記為【${myRecord.status}】！`;
 
-  // 標記異動，交由背景 Timer 批次寫入 Google Sheet
+  // 標記佇列同步
   triggerSheetSync(sessionId);
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
