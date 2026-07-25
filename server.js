@@ -55,7 +55,7 @@ const sessions = [
   { id: "wed", name: "週三匹克球團", nameEn: "Wednesday Session", day: 3, limit: 36, waitlistLimit: 30, colorTheme: "wed-theme" },
   // { id: "thu", name: "週四匹克球團", nameEn: "Thursday Session", day: 4, limit: 36, waitlistLimit: 30, colorTheme: "thu-theme" },
   { id: "fri", name: "週五匹克球團", nameEn: "Friday Session", day: 5, limit: 36, waitlistLimit: 30, colorTheme: "fri-theme" },
-  // { id: "sat", name: "週六匹克球團", nameEn: "Saturday Session", day: 6, limit: 36, waitlistLimit: 30, colorTheme: "sat-theme" },
+  { id: "sat", name: "週六匹克球團", nameEn: "Saturday Session", day: 6, limit: 36, waitlistLimit: 30, colorTheme: "sat-theme" },
   { id: "sun", name: "週日匹克球團", nameEn: "Sunday Session", day: 0, limit: 36, waitlistLimit: 30, colorTheme: "sun-theme" }
 ];
 
