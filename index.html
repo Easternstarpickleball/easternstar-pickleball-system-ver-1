@@ -179,7 +179,7 @@
       border: 3px solid #2d3748 !important;
       box-shadow: 0 8px 20px rgba(0,0,0,0.22) !important;
     }
-    /* 🌙 深色模式選取外框：改為高對比純白框＋白色發光效果 */
+    /* 🌙 深色模式選取外框 */
     body.dark-mode .session-btn.selected {
       border: 3px solid #ffffff !important;
       box-shadow: 0 0 15px rgba(255, 255, 255, 0.5) !important;
@@ -436,9 +436,7 @@
   <footer>
     <div class="footer-tools">
       <button id="btn-lang-toggle" onclick="toggleLanguage()" class="lang-btn">🌐 中文 / English</button>
-      
       <button class="theme-btn" onclick="toggleTheme()" id="theme-btn">🌙 深色</button>
-
       <a href="#" onclick="openContactAdmin(event)" class="contact-admin-btn" data-i18n="contactAdmin">
         ✉️ 聯絡管理員
       </a>
@@ -461,7 +459,8 @@
     let selectedSession = null;
     let userToken = null;
     let userEmail = null;
-    let isCurrentUserMember = false;
+    // 💡 從 localStorage 讀取會員快取狀態
+    let isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
     let currentLang = localStorage.getItem('app_lang') || 'zh';
 
     // 💡 溫馨提醒卡片伸縮開關
@@ -470,7 +469,7 @@
       card.classList.toggle('open');
     }
 
-    // 💡 更新主題按鈕文字（支援雙語）
+    // 💡 更新主題按鈕文字
     function updateThemeButton() {
       const isDark = document.body.classList.contains('dark-mode');
       const themeBtn = document.getElementById('theme-btn');
@@ -624,7 +623,7 @@
       return `${year}-${month}-${day}`;
     }
 
-    // 🔐 檢查 Google Token 是否過期 (依據原生 JWT 1小時 exp)
+    // 🔐 檢查 Google Token 是否過期
     function checkTokenExpiration() {
       const savedToken = localStorage.getItem('pickleball_token');
       if (!savedToken) {
@@ -649,18 +648,30 @@
 
     function clearAuthStorage() {
       localStorage.removeItem('pickleball_token');
+      localStorage.removeItem('pickleball_is_member');
       userToken = null;
       userEmail = null;
+      isCurrentUserMember = false;
+    }
+
+    // 💡 控管非會員大名輸入框的顯示邏輯
+    function updateNameInputVisibility() {
+      const nameBox = document.getElementById('non-member-name-box');
+      if (nameBox) {
+        // 若使用者已登入且確定不是會員，才顯示大名輸入框
+        nameBox.style.display = (userEmail && !isCurrentUserMember) ? 'block' : 'none';
+        if (userEmail && !isCurrentUserMember) {
+          loadCustomName();
+        }
+      }
     }
 
     window.onload = function() {
-      // 初始化深色模式主題
       if (localStorage.getItem('app_theme') === 'dark') {
         document.body.classList.add('dark-mode');
       }
 
       applyLanguage();
-      loadCustomName();
 
       const savedToken = localStorage.getItem('pickleball_token');
       if (savedToken && checkTokenExpiration()) {
@@ -669,6 +680,7 @@
           userToken = savedToken;
           userEmail = payload.email.trim().toLowerCase();
           showLoggedInState(payload.name, payload.email);
+          updateNameInputVisibility();
           loadSessions();
         } catch (e) {
           clearAuthStorage();
@@ -685,6 +697,7 @@
       const responsePayload = parseJwt(userToken);
       userEmail = responsePayload.email.trim().toLowerCase();
       showLoggedInState(responsePayload.name, responsePayload.email);
+      updateNameInputVisibility();
       loadSessions();
     }
 
@@ -695,9 +708,30 @@
       document.getElementById('user-profile-text').innerText = `👤 ${name} (${email})`;
     }
 
+    // 🚪 登出並立刻啟動重新驗證
     function logout() {
       clearAuthStorage();
-      location.reload();
+      
+      // 切換 UI 介面
+      document.getElementById('user-profile').style.display = 'none';
+      document.getElementById('auth-box').style.display = 'block';
+      updateNameInputVisibility();
+      
+      // 重新加載場次資料
+      loadSessions();
+
+      // 重新觸發 Google 登入驗證提示
+      if (window.google && google.accounts && google.accounts.id) {
+        google.accounts.id.initialize({
+          client_id: "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com",
+          callback: handleCredentialResponse
+        });
+        google.accounts.id.renderButton(
+          document.querySelector('.g_id_signin'),
+          { theme: "outline", size: "large" }
+        );
+        google.accounts.id.prompt();
+      }
     }
 
     function parseJwt(token) {
@@ -763,14 +797,14 @@
           sessions = data;
         } else if (data && Array.isArray(data.sessions)) {
           sessions = data.sessions;
-          isCurrentUserMember = data.isMember || false;
+          if (userEmail) {
+            // 💡 後端回傳後，更新並永久備份會員狀態
+            isCurrentUserMember = !!data.isMember;
+            localStorage.setItem('pickleball_is_member', isCurrentUserMember ? 'true' : 'false');
+          }
         }
 
-        const nameBox = document.getElementById('non-member-name-box');
-        if (nameBox) {
-          nameBox.style.display = (userEmail && !isCurrentUserMember) ? 'block' : 'none';
-          loadCustomName(); 
-        }
+        updateNameInputVisibility();
 
         const btnContainer = document.getElementById('session-buttons');
         btnContainer.innerHTML = '';
@@ -1106,7 +1140,6 @@
       }
     }
 
-    // 🚫 濃縮黑名單管理（合二為一）
     async function adminManageBlacklist() {
       const secret = prompt("請輸入管理員密碼：");
       if (!secret) return;

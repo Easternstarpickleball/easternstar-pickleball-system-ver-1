@@ -51,9 +51,7 @@ app.use('/api/', apiLimiter);
 // 💡 球敘場次設定
 const sessions = [
   { id: "mon", name: "週一匹克球團", nameEn: "Monday Session", day: 1, limit: 36, waitlistLimit: 30, colorTheme: "mon-theme" },
-  // { id: "tue", name: "週二匹克球團", nameEn: "Tuesday Session", day: 2, limit: 36, waitlistLimit: 30, colorTheme: "tue-theme" },
   { id: "wed", name: "週三匹克球團", nameEn: "Wednesday Session", day: 3, limit: 36, waitlistLimit: 30, colorTheme: "wed-theme" },
-  // { id: "thu", name: "週四匹克球團", nameEn: "Thursday Session", day: 4, limit: 36, waitlistLimit: 30, colorTheme: "thu-theme" },
   { id: "fri", name: "週五匹克球團", nameEn: "Friday Session", day: 5, limit: 36, waitlistLimit: 30, colorTheme: "fri-theme" },
   { id: "sat", name: "週六匹克球團", nameEn: "Saturday Session", day: 6, limit: 36, waitlistLimit: 30, colorTheme: "sat-theme" },
   { id: "sun", name: "週日匹克球團", nameEn: "Sunday Session", day: 0, limit: 36, waitlistLimit: 30, colorTheme: "sun-theme" }
@@ -132,7 +130,7 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔄 讀取 Google Sheet 黑名單（雙欄位：姓名 + Email）
+// 🔄 讀取 Google Sheet 黑名單
 async function reloadBlacklistFromSheet() {
   try {
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
@@ -197,7 +195,7 @@ async function saveBlacklistToSheet() {
   }
 }
 
-// 🔄 更新會員名單快取
+// 🔄 更新會員名單快取 (採用 Stale-While-Revalidate 舊快取不刪除策略)
 async function refreshMemberCache() {
   try {
     console.log('🔄 正在更新會員名單快取...');
@@ -228,11 +226,13 @@ async function refreshMemberCache() {
       newMap.set(email, finalName);
     });
 
+    // 💡 抓取完全成功後，才安全替換快取
     memberMapCache = newMap;
     lastFetchTime = Date.now();
     console.log(`✅ 會員快取更新完成！共抓取到 ${memberMapCache.size} 筆會員資料。`);
   } catch (err) {
-    console.error('❌ 更新會員名單失敗：', err.message);
+    // 💡 抓取失敗時，舊 Map 快取依然完整保留在記憶體中，絕不歸零
+    console.error('❌ 更新會員名單失敗，保留舊有會員快取：', err.message);
   }
 }
 
@@ -430,7 +430,7 @@ async function reloadFromSheet() {
 // 健康檢查
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次資訊 (改為純讀取，不執行外部 Google 驗證，超快速回應)
+// API: 取得場次資訊
 app.get('/api/sessions', async (req, res) => {
   const now = getTaipeiNow();
   const userEmail = (req.query.userEmail || '').trim().toLowerCase();
@@ -550,7 +550,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   const cleanEmail = userEmail.trim().toLowerCase();
   const checkName = (memberInfo.userName || customName || '').trim().toLowerCase();
 
-  // 🛑 檢查黑名單 (雙欄位比對)
+  // 🛑 檢查黑名單
   const isBlacklisted = blacklistItems.some(item => {
     const matchEmail = cleanEmail && item.email && item.email.toLowerCase() === cleanEmail;
     const matchName = checkName && item.name && item.name.toLowerCase() === checkName;
@@ -575,7 +575,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
 
   let finalUserName = memberInfo.userName;
 
-  // 💡 當且僅當「真的非會員」且非壓測時，才檢查大名！
   if (!memberInfo.isMember && !isStressTest) {
     if (!customName || customName.trim() === '') {
       return res.json({ success: false, message: "❌ 非會員請填寫「中文大名」！" });
@@ -609,7 +608,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     ? "🎉 搶位成功！已為您保留正取名額！" 
     : `⚠️ 正取已滿！已成功為您登記為【${myRecord.status}】！`;
 
-  // 標記佇列同步
   triggerSheetSync(sessionId);
 
   const sanitizedAttendees = sessionAttendees[sessionId].map(a => ({
