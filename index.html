@@ -273,6 +273,23 @@
       justify-content: space-between; 
       align-items: center; 
     }
+
+    /* 🔄 刷新名單按鈕 */
+    .btn-refresh {
+      background: var(--box-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .btn-refresh:hover {
+      background: var(--border-color);
+    }
+
     .attendees-list { max-height: 260px; overflow-y: auto; font-size: 16px; }
     .attendee-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 4px; border-bottom: 1px dashed var(--border-color); }
     .attendee-item:last-child { border-bottom: none; }
@@ -389,7 +406,7 @@
       <div id="attendees-section" class="attendees-container" style="display: none;">
         <div class="attendees-title">
           <span id="attendees-title-text" data-i18n="attendeeListTitle">📋 報名名單</span>
-          <span style="font-size: 14px; color: var(--text-muted); font-weight: normal;" data-i18n="realtimeUpdate">(即時更新)</span>
+          <button class="btn-refresh" onclick="loadSessions()" data-i18n="refreshBtn">🔄 刷新名單</button>
         </div>
         <div class="attendees-list" id="attendees-list">
           <p class="empty-text" data-i18n="clickSessionToLoad">請點擊上方場次以載入名單</p>
@@ -404,7 +421,7 @@
         <div class="notice-content" id="notice-content">
           <span data-i18n="noticeContent">
             1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>
-            2. 搶位時若剛好跨過開放秒數，可按 <strong>重新整理</strong> 取得最新狀態。<br>
+            2. 搶位時若剛好跨過開放秒數，可按 <strong>刷新名單</strong> 取得最新狀態。<br>
             3. 當天 <strong>18:00</strong> 後停止報名與取消報名。<br>
             4. 非會員報名時請務必填寫中文真實大名以利核對。<br>
             5.人數上限:36 人(不含工作人員)(滾動調整)<br>
@@ -443,7 +460,7 @@
   <script>
     let selectedSession = null;
     let userToken = null;
-    let pollInterval = null;
+    let userEmail = null;
     let isCurrentUserMember = false;
     let currentLang = localStorage.getItem('app_lang') || 'zh';
 
@@ -492,7 +509,7 @@
         appTitle: "匹克球團搶位系統",
         contactAdmin: "✉️ 聯絡管理員",
         noticeTitle: "⚠️ 報名注意事項",
-        noticeContent: "1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>2. 搶位時若剛好跨過開放秒數，可按 <strong>重新整理</strong> 取得最新狀態。<br>3. 當天 <strong>18:00</strong> 後停止報名與取消報名。<br>4. 非會員報名時請務必填寫中文真實大名以利核對。<br>5.人數上限:36 人(不含工作人員)(滾動調整)<br>6.費用: 會員: 100 NTD 非會員: 180 NTD",
+        noticeContent: "1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>2. 搶位時若剛好跨過開放秒數，可按 <strong>刷新名單</strong> 取得最新狀態。<br>3. 當天 <strong>18:00</strong> 後停止報名與取消報名。<br>4. 非會員報名時請務必填寫中文真實大名以利核對。<br>5.人數上限:36 人(不含工作人員)(滾動調整)<br>6.費用: 會員: 100 NTD 非會員: 180 NTD",
         selectSessionHint: "請點選下方場次卡片進行報名",
         remainingSeatsLabel: "剩餘名額：",
         waitlistLabel: "候補位置：",
@@ -507,7 +524,7 @@
         btnCompleted: "✅ 已完成報名",
         btnCancel: "取消報名",
         attendeeListTitle: "📋 報名名單",
-        realtimeUpdate: "(即時更新)",
+        refreshBtn: "🔄 刷新名單",
         clickSessionToLoad: "請點擊上方場次以載入名單",
         emptyAttendees: "目前尚無人報名，快來搶第一個！",
         adminToolsTitle: "🛠️ 管理員工具箱：",
@@ -543,7 +560,7 @@
         btnCompleted: "✅ Registered",
         btnCancel: "Cancel Registration",
         attendeeListTitle: "📋 Attendee List",
-        realtimeUpdate: "(Live Update)",
+        refreshBtn: "🔄 Refresh",
         clickSessionToLoad: "Click session above to load attendees",
         emptyAttendees: "No signups yet. Be the first!",
         adminToolsTitle: "🛠️ Admin Tools:",
@@ -607,33 +624,33 @@
       return `${year}-${month}-${day}`;
     }
 
-    // 🔐 檢查登入與 3 分鐘過期機制
+    // 🔐 檢查 Google Token 是否過期 (依據原生 JWT 1小時 exp)
     function checkTokenExpiration() {
       const savedToken = localStorage.getItem('pickleball_token');
-      const loginTime = localStorage.getItem('pickleball_login_time');
-      const THREE_MINUTES_MS = 3 * 60 * 1000; // 3分鐘
-
-      if (!savedToken || !loginTime) {
+      if (!savedToken) {
         clearAuthStorage();
         return false;
       }
 
-      const now = Date.now();
-      if (now - parseInt(loginTime, 10) > THREE_MINUTES_MS) {
-        // 已超過 3 分鐘，清除驗證並通知
+      try {
+        const payload = parseJwt(savedToken);
+        if (!payload || !payload.exp || payload.exp * 1000 <= Date.now() + 10000) {
+          clearAuthStorage();
+          alert(currentLang === 'en' ? "Login session expired. Please sign in with Google again." : "登入已過期，請重新驗證 Google 帳號！");
+          location.reload();
+          return false;
+        }
+        return true;
+      } catch (e) {
         clearAuthStorage();
-        alert(currentLang === 'en' ? "Session expired after 3 minutes. Please re-authenticate Google login." : "登入時效（3分鐘）已到期，請重新驗證 Google 帳號！");
-        location.reload();
         return false;
       }
-
-      return true;
     }
 
     function clearAuthStorage() {
       localStorage.removeItem('pickleball_token');
-      localStorage.removeItem('pickleball_login_time');
       userToken = null;
+      userEmail = null;
     }
 
     window.onload = function() {
@@ -649,15 +666,10 @@
       if (savedToken && checkTokenExpiration()) {
         try {
           const payload = parseJwt(savedToken);
-          if (payload && payload.exp * 1000 > Date.now() + 10000) {
-            userToken = savedToken;
-            showLoggedInState(payload.name, payload.email);
-            loadSessions();
-            startPolling();
-          } else {
-            clearAuthStorage();
-            loadSessions();
-          }
+          userToken = savedToken;
+          userEmail = payload.email.trim().toLowerCase();
+          showLoggedInState(payload.name, payload.email);
+          loadSessions();
         } catch (e) {
           clearAuthStorage();
           loadSessions();
@@ -670,11 +682,10 @@
     function handleCredentialResponse(response) {
       userToken = response.credential;
       localStorage.setItem('pickleball_token', userToken);
-      localStorage.setItem('pickleball_login_time', Date.now().toString()); // 紀錄登入時間
       const responsePayload = parseJwt(userToken);
+      userEmail = responsePayload.email.trim().toLowerCase();
       showLoggedInState(responsePayload.name, responsePayload.email);
       loadSessions();
-      startPolling();
     }
 
     function showLoggedInState(name, email) {
@@ -687,13 +698,6 @@
     function logout() {
       clearAuthStorage();
       location.reload();
-    }
-
-    function startPolling() {
-      if (!pollInterval) pollInterval = setInterval(() => {
-        if (userToken && !checkTokenExpiration()) return;
-        loadSessions();
-      }, 5000);
     }
 
     function parseJwt(token) {
@@ -750,7 +754,7 @@
 
     async function loadSessions() {
       try {
-        const url = userToken ? `/api/sessions?token=${encodeURIComponent(userToken)}` : '/api/sessions';
+        const url = userEmail ? `/api/sessions?userEmail=${encodeURIComponent(userEmail)}` : '/api/sessions';
         const res = await fetch(url);
         const data = await res.json();
 
@@ -764,8 +768,8 @@
 
         const nameBox = document.getElementById('non-member-name-box');
         if (nameBox) {
-          nameBox.style.display = (userToken && !isCurrentUserMember) ? 'block' : 'none';
-          loadCustomName(); // 確保重新整理或資料載入時自動帶入輸入過的名稱
+          nameBox.style.display = (userEmail && !isCurrentUserMember) ? 'block' : 'none';
+          loadCustomName(); 
         }
 
         const btnContainer = document.getElementById('session-buttons');
@@ -925,7 +929,7 @@
           document.getElementById('custom-name').focus();
           return;
         }
-        saveCustomName(customNameVal); // 送出前確保保存至 LocalStorage
+        saveCustomName(customNameVal); 
       }
 
       const grabBtn = document.getElementById('btn-grab');

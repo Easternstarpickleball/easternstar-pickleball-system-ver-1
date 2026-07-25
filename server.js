@@ -50,11 +50,13 @@ app.use('/api/', apiLimiter);
 
 // 💡 球敘場次設定
 const sessions = [
-  { id: "tue", name: "週二匹克球團", nameEn: "Tuesday Session", day: 2, limit: 36, waitlistLimit: 30, colorTheme: "tue-theme" },
-  { id: "thu", name: "週四匹克球團", nameEn: "Thursday Session", day: 4, limit: 36, waitlistLimit: 30, colorTheme: "thu-theme" },
   { id: "mon", name: "週一匹克球團", nameEn: "Monday Session", day: 1, limit: 36, waitlistLimit: 30, colorTheme: "mon-theme" },
+  // { id: "tue", name: "週二匹克球團", nameEn: "Tuesday Session", day: 2, limit: 36, waitlistLimit: 30, colorTheme: "tue-theme" },
   { id: "wed", name: "週三匹克球團", nameEn: "Wednesday Session", day: 3, limit: 36, waitlistLimit: 30, colorTheme: "wed-theme" },
-  { id: "sat", name: "週六匹克球團", nameEn: "Saturday Session", day: 6, limit: 36, waitlistLimit: 30, colorTheme: "sat-theme" }
+  // { id: "thu", name: "週四匹克球團", nameEn: "Thursday Session", day: 4, limit: 36, waitlistLimit: 30, colorTheme: "thu-theme" },
+  { id: "fri", name: "週五匹克球團", nameEn: "Friday Session", day: 5, limit: 36, waitlistLimit: 30, colorTheme: "fri-theme" },
+  // { id: "sat", name: "週六匹克球團", nameEn: "Saturday Session", day: 6, limit: 36, waitlistLimit: 30, colorTheme: "sat-theme" },
+  { id: "sun", name: "週日匹克球團", nameEn: "Sunday Session", day: 0, limit: 36, waitlistLimit: 30, colorTheme: "sun-theme" }
 ];
 
 // 初始化記憶體快取
@@ -236,10 +238,7 @@ async function refreshMemberCache() {
 
 // ⏰ 背景任務：每 5 分鐘自動更新會員名單快取
 setInterval(async () => {
-  if (pendingSyncSessions.size === 0 || isSheetSyncing) return;
-  isSheetSyncing = true;
-  await processSheetSyncQueue();
-  isSheetSyncing = false;
+  await refreshMemberCache();
 }, 5 * 60 * 1000);
 
 // 🔍 比對會員身分
@@ -431,23 +430,15 @@ async function reloadFromSheet() {
 // 健康檢查
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次資訊
+// API: 取得場次資訊 (改為純讀取，不執行外部 Google 驗證，超快速回應)
 app.get('/api/sessions', async (req, res) => {
   const now = getTaipeiNow();
-  const token = req.query.token;
+  const userEmail = (req.query.userEmail || '').trim().toLowerCase();
 
   let isUserMember = false;
-  let userEmail = '';
-
-  if (token) {
-    try {
-      const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
-      userEmail = ticket.getPayload().email.trim().toLowerCase();
-      const memberInfo = checkMemberStatus(userEmail);
-      isUserMember = memberInfo.isMember;
-    } catch (e) {
-      isUserMember = false;
-    }
+  if (userEmail) {
+    const memberInfo = checkMemberStatus(userEmail);
+    isUserMember = memberInfo.isMember;
   }
 
   let result = sessions.map(s => {
