@@ -8,19 +8,12 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 💡 Render 部署必備：信任 Proxy 以取得真實 User IP
 app.set('trust proxy', 1);
-
-// 🔒 允許所有跨網域請求
 app.use(cors());
 
-// 🔒 全域系統開關 (預設為 true 開放中)
 let isSystemActive = true;
-
-// 🔒 黑名單快取：儲存雙欄位物件陣列 [{ name: '...', email: '...' }]
 let blacklistItems = [];
 
-// 🔒 環境變數載入
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 const MEMBER_SPREADSHEET_ID = process.env.MEMBER_SPREADSHEET_ID;
@@ -31,7 +24,6 @@ const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '/')));
 
-// 🔒 防刷機制 (Rate Limiter)
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, 
   max: 300, 
@@ -48,7 +40,6 @@ const grabLimiter = rateLimit({
 
 app.use('/api/', apiLimiter);
 
-// 💡 球敘場次設定
 const sessions = [
   { id: "mon", name: "週一匹克球團", nameEn: "Monday Session", day: 1, limit: 36, waitlistLimit: 30, colorTheme: "mon-theme" },
   { id: "wed", name: "週三匹克球團", nameEn: "Wednesday Session", day: 3, limit: 36, waitlistLimit: 30, colorTheme: "wed-theme" },
@@ -57,7 +48,6 @@ const sessions = [
   { id: "sun", name: "週日匹克球團", nameEn: "Sunday Session", day: 0, limit: 36, waitlistLimit: 30, colorTheme: "sun-theme" }
 ];
 
-// 初始化記憶體快取
 const seatsCache = {};
 const waitlistCache = {};
 const registeredEmails = {};
@@ -73,7 +63,6 @@ sessions.forEach(s => {
 let memberMapCache = new Map();
 let lastFetchTime = 0;
 
-// 🔒 輔助函式：Email 脫敏
 function maskEmail(email) {
   if (!email || !email.includes('@')) return '***';
   const [user, domain] = email.split('@');
@@ -83,12 +72,10 @@ function maskEmail(email) {
   return `${user.substring(0, 2)}***${user.slice(-1)}@${domain}`;
 }
 
-// 🕒 取得台北當前 Date 物件
 function getTaipeiNow() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
 }
 
-// 📅 精準推算目標日期格式 YYYY-MM-DD
 function getSessionTargetDate(dayOfWeekTarget) {
   const now = getTaipeiNow();
   const dayOfWeek = now.getDay();
@@ -104,7 +91,6 @@ function getSessionTargetDate(dayOfWeekTarget) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// 🔑 取得 Google 試算表物件
 async function getGoogleDoc(spreadsheetId) {
   const jsonKeyString = process.env.GOOGLE_JSON_KEY;
   if (!jsonKeyString) throw new Error('❌ 缺少必要的環境變數：GOOGLE_JSON_KEY');
@@ -130,7 +116,6 @@ async function getGoogleDoc(spreadsheetId) {
   return doc;
 }
 
-// 🔄 讀取 Google Sheet 黑名單
 async function reloadBlacklistFromSheet() {
   try {
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
@@ -158,13 +143,12 @@ async function reloadBlacklistFromSheet() {
       }
     });
 
-    console.log(`✅ [黑名單] 已從 Google Sheet 載入完成！共 ${blacklistItems.length} 筆雙欄位紀錄。`);
+    console.log(`✅ [黑名單] 已從 Google Sheet 載入完成！共 ${blacklistItems.length} 筆紀錄。`);
   } catch (err) {
     console.error('❌ 載入 Google Sheet 黑名單失敗：', err.message);
   }
 }
 
-// 💾 將記憶體最新的雙欄位黑名單整列覆寫回 Google Sheet
 async function saveBlacklistToSheet() {
   try {
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
@@ -189,13 +173,13 @@ async function saveBlacklistToSheet() {
       }));
       await sheet.addRows(rowsToAdd);
     }
-    console.log('✅ [黑名單] 已即時雙欄位同步覆寫至 Google Sheet！');
+    console.log('✅ [黑名單] 已即時同步至 Google Sheet！');
   } catch (err) {
     console.error('❌ 同步黑名單至 Google Sheet 失敗：', err.message);
   }
 }
 
-// 🔄 更新會員名單快取 (採用 Stale-While-Revalidate 舊快取不刪除策略)
+// 🔄 更新會員名單快取 (Stale-While-Revalidate 舊快取不刪除策略)
 async function refreshMemberCache() {
   try {
     console.log('🔄 正在更新會員名單快取...');
@@ -226,22 +210,19 @@ async function refreshMemberCache() {
       newMap.set(email, finalName);
     });
 
-    // 💡 抓取完全成功後，才安全替換快取
+    // 抓取成功才替換 Map，舊會員資料絕不失效
     memberMapCache = newMap;
     lastFetchTime = Date.now();
     console.log(`✅ 會員快取更新完成！共抓取到 ${memberMapCache.size} 筆會員資料。`);
   } catch (err) {
-    // 💡 抓取失敗時，舊 Map 快取依然完整保留在記憶體中，絕不歸零
-    console.error('❌ 更新會員名單失敗，保留舊有會員快取：', err.message);
+    console.error('❌ 更新會員名單失敗，保留舊快取：', err.message);
   }
 }
 
-// ⏰ 背景任務：每 5 分鐘自動更新會員名單快取
 setInterval(async () => {
   await refreshMemberCache();
 }, 5 * 60 * 1000);
 
-// 🔍 比對會員身分
 function checkMemberStatus(userEmail) {
   if (!userEmail) return { isMember: false, userName: '非會員 / 未登記' };
   const cleanEmail = userEmail.trim().toLowerCase();
@@ -252,7 +233,6 @@ function checkMemberStatus(userEmail) {
   }
 }
 
-// ⚙️ 核心輔助函式：全量重新計算狀態與剩餘名額
 function recalculateSessionStatus(sessionId) {
   const targetSession = sessions.find(s => s.id === sessionId);
   if (!targetSession) return;
@@ -275,7 +255,6 @@ function recalculateSessionStatus(sessionId) {
   waitlistCache[sessionId] = currentWaitlistCount;
 }
 
-// 🚦【試算表寫入 Queue】批次備份機制
 const pendingSyncSessions = new Set();
 let isSheetSyncing = false;
 
@@ -283,7 +262,6 @@ function triggerSheetSync(sessionId) {
   pendingSyncSessions.add(sessionId);
 }
 
-// ⏰ 背景任務：每 3 分鐘批次檢查並寫入有變動的試算表
 setInterval(async () => {
   if (pendingSyncSessions.size === 0 || isSheetSyncing) return;
   isSheetSyncing = true;
@@ -302,10 +280,7 @@ async function processSheetSyncQueue() {
     if (!targetSession) continue;
 
     const snapshotAttendees = [...(sessionAttendees[sessionId] || [])];
-
-    if (snapshotAttendees.length === 0) {
-      continue;
-    }
+    if (snapshotAttendees.length === 0) continue;
 
     const dateStr = getSessionTargetDate(targetSession.day);
 
@@ -338,7 +313,7 @@ async function processSheetSyncQueue() {
         pendingSyncSessions.add(sessionId);
       }
 
-      console.log(`✅ 【${targetSession.name}】Google Sheet 批次同步成功！`);
+      console.log(`✅ 【${targetSession.name}】Google Sheet 同步成功！`);
     } catch (err) {
       console.error(`❌ 同步 Google Sheet 失敗 [${sessionId}]：`, err.message);
       pendingSyncSessions.add(sessionId);
@@ -346,7 +321,6 @@ async function processSheetSyncQueue() {
   }
 }
 
-// 🔄 重載試算表至記憶體
 async function reloadFromSheet() {
   try {
     console.log('🔄 正在從 Google 報名試算表重載資料至記憶體...');
@@ -427,10 +401,8 @@ async function reloadFromSheet() {
   }
 }
 
-// 健康檢查
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
-// API: 取得場次資訊
 app.get('/api/sessions', async (req, res) => {
   const now = getTaipeiNow();
   const userEmail = (req.query.userEmail || '').trim().toLowerCase();
@@ -505,7 +477,6 @@ app.get('/api/sessions', async (req, res) => {
   res.json({ isMember: isUserMember, sessions: result });
 });
 
-// API: 搶位與候補
 app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
@@ -550,7 +521,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   const cleanEmail = userEmail.trim().toLowerCase();
   const checkName = (memberInfo.userName || customName || '').trim().toLowerCase();
 
-  // 🛑 檢查黑名單
   const isBlacklisted = blacklistItems.some(item => {
     const matchEmail = cleanEmail && item.email && item.email.toLowerCase() === cleanEmail;
     const matchName = checkName && item.name && item.name.toLowerCase() === checkName;
@@ -626,7 +596,6 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   });
 });
 
-// API: 取消報名
 app.post('/api/cancel', grabLimiter, async (req, res) => {
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
@@ -672,8 +641,6 @@ app.post('/api/cancel', grabLimiter, async (req, res) => {
     attendees: sanitizedAttendees
   });
 });
-
-// --- 管理員 API ---
 
 app.post('/api/admin/toggle-pause', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
@@ -788,7 +755,7 @@ app.post('/api/admin/add-blacklist', async (req, res) => {
 
     return res.json({ 
       success: true, 
-      message: `🚫 已成功將【${finalName} (${finalEmail})】整列寫入黑名單！` 
+      message: `🚫 已成功將【${finalName} (${finalEmail})】寫入黑名單！` 
     });
 
   } catch (err) {
@@ -831,13 +798,13 @@ app.post('/api/admin/remove-blacklist', async (req, res) => {
     if (removedRows.length === 0) {
       return res.json({ 
         success: false, 
-        message: `⚠️ 在黑名單中找不到與【${query}】相關的整列紀錄！` 
+        message: `⚠️ 在黑名單中找不到與【${query}】相關的紀錄！` 
       });
     }
 
     return res.json({ 
       success: true, 
-      message: `🟢 成功刪除整列！已徹底解除：${removedRows.join(', ')}` 
+      message: `🟢 成功刪除紀錄！已徹底解除：${removedRows.join(', ')}` 
     });
 
   } catch (err) {
@@ -877,7 +844,6 @@ app.post('/api/admin/reorder-user', async (req, res) => {
   res.json({ success: true, message: `✅ 已成功將【${movedUser.name}】調整至第 ${newPosition} 位！` });
 });
 
-// 🔄 管理員手動同步按鈕
 app.post('/api/admin/sync', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
