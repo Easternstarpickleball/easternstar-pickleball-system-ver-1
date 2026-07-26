@@ -16,8 +16,8 @@
       --border-color: #cbd5e0;
       
       /* 莫蘭迪風格主題色 */
-      --theme-mon: linear-gradient(135deg, #1d8d95, #0c8790);
-      --theme-tue: linear-gradient(135deg, #2870b7, #1b5d9a);
+      --theme-mon: linear-gradient(135deg, #7f8c8d, #95a5a6);
+      --theme-tue: linear-gradient(135deg, #708090, #536270);
       --theme-wed: linear-gradient(135deg, #d69e2e, #b7791f);
       --theme-thu: linear-gradient(135deg, #8fbc8f, #6b8e23);
       --theme-fri: linear-gradient(135deg, #d8a48f, #bc7d63);
@@ -405,7 +405,7 @@
       <div id="attendees-section" class="attendees-container" style="display: none;">
         <div class="attendees-title">
           <span id="attendees-title-text" data-i18n="attendeeListTitle">📋 報名名單</span>
-          <button class="btn-refresh" onclick="loadSessions()" data-i18n="refreshBtn">🔄 刷新名單</button>
+          <button class="btn-refresh" onclick="loadSessions(true)" data-i18n="refreshBtn">🔄 刷新名單</button>
         </div>
         <div class="attendees-list" id="attendees-list">
           <p class="empty-text" data-i18n="clickSessionToLoad">請點擊上方場次以載入名單</p>
@@ -462,6 +462,20 @@
     // 💡 預先從 localStorage 讀取會員快取狀態
     let isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
     let currentLang = localStorage.getItem('app_lang') || 'zh';
+
+    // 💡 防重整/請求頻繁冷卻機制（限制 2 秒內不可連續刷新）
+    function checkRefreshCooldown() {
+      const LAST_REFRESH_KEY = 'pickleball_last_refresh';
+      const COOLDOWN_MS = 2000;
+      const now = Date.now();
+      const lastRefresh = localStorage.getItem(LAST_REFRESH_KEY);
+
+      if (lastRefresh && (now - parseInt(lastRefresh)) < COOLDOWN_MS) {
+        return false;
+      }
+      localStorage.setItem(LAST_REFRESH_KEY, now.toString());
+      return true;
+    }
 
     function toggleNotice() {
       const card = document.getElementById('notice-card');
@@ -646,20 +660,16 @@
       isCurrentUserMember = false;
     }
 
-    // 💡 嚴格控制姓名欄位顯示：只有「明確已登入」且「確定非會員」才顯示！
-    function updateNameInputVisibility() {
+    // 💡 預設全藏！只有在「確定已登入」且「後端明確回傳非會員 (isExplicitNonMember === true)」時才顯示！
+    function updateNameInputVisibility(isExplicitNonMember = false) {
       const nameBox = document.getElementById('non-member-name-box');
-      if (!nameBox) return;
-
-      // 從 localStorage 再次確認快取狀態
-      const cachedIsMember = localStorage.getItem('pickleball_is_member') === 'true';
-
-      // 只有在「已登入」且「確定不是會員 (全域變數與快取皆為 false)」時才顯示
-      if (userEmail && !isCurrentUserMember && !cachedIsMember) {
-        nameBox.style.display = 'block';
-        loadCustomName();
-      } else {
-        nameBox.style.display = 'none';
+      if (nameBox) {
+        if (userEmail && isExplicitNonMember) {
+          nameBox.style.display = 'block';
+          loadCustomName();
+        } else {
+          nameBox.style.display = 'none';
+        }
       }
     }
 
@@ -676,12 +686,10 @@
           const payload = parseJwt(savedToken);
           userToken = savedToken;
           userEmail = payload.email.trim().toLowerCase();
-          
-          // 💡 確保在呼叫 updateNameInputVisibility 前先讀取 localstorage 快取
-          isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
-
           showLoggedInState(payload.name, payload.email);
-          updateNameInputVisibility();
+          
+          // 預設關閉姓名框，等待 loadSessions() API 回應
+          updateNameInputVisibility(false);
           loadSessions();
         } catch (e) {
           clearAuthStorage();
@@ -699,10 +707,7 @@
       userEmail = responsePayload.email.trim().toLowerCase();
       showLoggedInState(responsePayload.name, responsePayload.email);
       
-      // 登入當下先用本地快取設定視圖
-      isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
-      updateNameInputVisibility();
-      
+      updateNameInputVisibility(false);
       loadSessions();
     }
 
@@ -718,7 +723,7 @@
       
       document.getElementById('user-profile').style.display = 'none';
       document.getElementById('auth-box').style.display = 'block';
-      updateNameInputVisibility();
+      updateNameInputVisibility(false);
       
       loadSessions();
 
@@ -778,7 +783,7 @@
 
         html += `
           <div class="attendee-item">
-            <span class="attendee-name">${index + 1}. ${item.name}</span>
+            <span class="attendee-name">${index + 1}.${item.name}</span>
             <span class="status-tag ${tagClass}">${item.status}${memberTag}</span>
           </div>
         `;
@@ -787,7 +792,12 @@
       listContainer.innerHTML = html;
     }
 
-    async function loadSessions() {
+    async function loadSessions(isManualRefresh = false) {
+      // 若為手動點擊刷新，進行冷卻時間檢查
+      if (isManualRefresh && !checkRefreshCooldown()) {
+        return;
+      }
+
       try {
         const url = userEmail ? `/api/sessions?userEmail=${encodeURIComponent(userEmail)}` : '/api/sessions';
         const res = await fetch(url);
@@ -796,16 +806,18 @@
         let sessions = [];
         if (Array.isArray(data)) {
           sessions = data;
+          updateNameInputVisibility(false);
         } else if (data && Array.isArray(data.sessions)) {
           sessions = data.sessions;
           if (userEmail) {
-            // 💡 後端確認會員身份後，寫入快取並即時更新 DOM 顯示
             isCurrentUserMember = !!data.isMember;
             localStorage.setItem('pickleball_is_member', isCurrentUserMember ? 'true' : 'false');
+            // 後端確認身份後，若確定是非會員才打開輸入框
+            updateNameInputVisibility(!isCurrentUserMember);
+          } else {
+            updateNameInputVisibility(false);
           }
         }
-
-        updateNameInputVisibility();
 
         const btnContainer = document.getElementById('session-buttons');
         btnContainer.innerHTML = '';
@@ -816,7 +828,7 @@
           const prefix = getDayPrefix(s);
           const btn = document.createElement('button');
           const isSelected = selectedSession && selectedSession.id === s.id;
-          btn.className = `session-btn theme-${prefix} ${isSelected ? 'selected' : ''}`;
+          btn.className = `session-btn theme-${prefix}${isSelected ? 'selected' : ''}`;
           btn.dataset.id = s.id;
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
@@ -934,7 +946,7 @@
 
       if (session.remainingSeats > 0) {
         labelElem.innerText = t.remainingSeatsLabel;
-        seatsElem.innerText = `${session.remainingSeats} ${t.seatsCount}`;
+        seatsElem.innerText = `${session.remainingSeats}${t.seatsCount}`;
       } else {
         labelElem.innerText = t.waitlistLabel;
         seatsElem.innerText = t.waitlistRank.replace('{num}', session.waitlistCount + 1);
