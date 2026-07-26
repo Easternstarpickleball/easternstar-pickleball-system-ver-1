@@ -918,6 +918,7 @@
       const isToday = session.dateStr === todayStr;
       const isClosedAfter18 = isToday && currentHour >= 18;
 
+      // 1. 如果超過當天 18:00 或為過去場次 -> 關閉報名與取消
       if (isPast || isClosedAfter18) {
         grabBtn.disabled = true;
         grabBtn.innerText = currentLang === 'en' ? '⏰ Signup Closed (After 18:00)' : '⏰ 報名已截止 (18:00後)';
@@ -927,18 +928,29 @@
         return;
       }
 
+      // 🔒 2.【關鍵新增】：未登入狀態 (無 userToken) -> 將報名按鈕禁轉灰
+      if (!userToken) {
+        grabBtn.disabled = true;
+        grabBtn.innerText = currentLang === 'en' ? '🔒 Please Sign In First' : '🔒 請先驗證 Google 帳號';
+
+        cancelBtn.disabled = true;
+        cancelBtn.innerText = t.btnCancel;
+        return;
+      }
+
+      // 3. 已登入，且該場次已報名過
       if (session.isUserRegistered) {
         grabBtn.disabled = true;
         grabBtn.innerText = t.btnCompleted;
-      } else {
-        grabBtn.disabled = false;
-        grabBtn.innerText = session.remainingSeats > 0 ? t.btnGrabMain : t.btnGrabWaitlist;
-      }
 
-      if (session.isUserRegistered) {
         cancelBtn.disabled = false;
         cancelBtn.innerText = `❌ ${t.btnCancel}`;
-      } else {
+      } 
+      // 4. 已登入，尚未報名 -> 恢復亮色（綠色）開放報名/候補
+      else {
+        grabBtn.disabled = false;
+        grabBtn.innerText = session.remainingSeats > 0 ? t.btnGrabMain : t.btnGrabWaitlist;
+
         cancelBtn.disabled = true;
         cancelBtn.innerText = t.btnCancel;
       }
