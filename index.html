@@ -16,8 +16,8 @@
       --border-color: #cbd5e0;
       
       /* 莫蘭迪風格主題色 */
-      --theme-mon: linear-gradient(135deg, #7f8c8d, #95a5a6);
-      --theme-tue: linear-gradient(135deg, #708090, #536270);
+      --theme-mon: linear-gradient(135deg, #1d8d95, #0c8790);
+      --theme-tue: linear-gradient(135deg, #2870b7, #1b5d9a);
       --theme-wed: linear-gradient(135deg, #d69e2e, #b7791f);
       --theme-thu: linear-gradient(135deg, #8fbc8f, #6b8e23);
       --theme-fri: linear-gradient(135deg, #d8a48f, #bc7d63);
@@ -649,13 +649,17 @@
     // 💡 嚴格控制姓名欄位顯示：只有「明確已登入」且「確定非會員」才顯示！
     function updateNameInputVisibility() {
       const nameBox = document.getElementById('non-member-name-box');
-      if (nameBox) {
-        if (userEmail && !isCurrentUserMember) {
-          nameBox.style.display = 'block';
-          loadCustomName();
-        } else {
-          nameBox.style.display = 'none';
-        }
+      if (!nameBox) return;
+
+      // 從 localStorage 再次確認快取狀態
+      const cachedIsMember = localStorage.getItem('pickleball_is_member') === 'true';
+
+      // 只有在「已登入」且「確定不是會員 (全域變數與快取皆為 false)」時才顯示
+      if (userEmail && !isCurrentUserMember && !cachedIsMember) {
+        nameBox.style.display = 'block';
+        loadCustomName();
+      } else {
+        nameBox.style.display = 'none';
       }
     }
 
@@ -672,6 +676,10 @@
           const payload = parseJwt(savedToken);
           userToken = savedToken;
           userEmail = payload.email.trim().toLowerCase();
+          
+          // 💡 確保在呼叫 updateNameInputVisibility 前先讀取 localstorage 快取
+          isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
+
           showLoggedInState(payload.name, payload.email);
           updateNameInputVisibility();
           loadSessions();
