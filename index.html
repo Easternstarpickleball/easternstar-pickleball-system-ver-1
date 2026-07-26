@@ -16,8 +16,8 @@
       --border-color: #cbd5e0;
       
       /* 莫蘭迪風格主題色 */
-      --theme-mon: linear-gradient(135deg, #7f8c8d, #95a5a6);
-      --theme-tue: linear-gradient(135deg, #708090, #536270);
+      --theme-mon: linear-gradient(135deg, #0b8992, #095c62);
+      --theme-tue: linear-gradient(135deg, #085cb0, #0e3a64);
       --theme-wed: linear-gradient(135deg, #d69e2e, #b7791f);
       --theme-thu: linear-gradient(135deg, #8fbc8f, #6b8e23);
       --theme-fri: linear-gradient(135deg, #d8a48f, #bc7d63);
@@ -660,16 +660,16 @@
       isCurrentUserMember = false;
     }
 
-    // 💡 預設全藏！只有在「確定已登入」且「後端明確回傳非會員 (isExplicitNonMember === true)」時才顯示！
-    function updateNameInputVisibility(isExplicitNonMember = false) {
+    // 💡 確定只有「已登入 且 明確為非會員」時才顯示輸入框
+    function updateNameInputVisibility() {
       const nameBox = document.getElementById('non-member-name-box');
-      if (nameBox) {
-        if (userEmail && isExplicitNonMember) {
-          nameBox.style.display = 'block';
-          loadCustomName();
-        } else {
-          nameBox.style.display = 'none';
-        }
+      if (!nameBox) return;
+
+      if (userEmail && isCurrentUserMember === false) {
+        nameBox.style.display = 'block';
+        loadCustomName();
+      } else {
+        nameBox.style.display = 'none';
       }
     }
 
@@ -686,10 +686,12 @@
           const payload = parseJwt(savedToken);
           userToken = savedToken;
           userEmail = payload.email.trim().toLowerCase();
-          showLoggedInState(payload.name, payload.email);
           
-          // 預設關閉姓名框，等待 loadSessions() API 回應
-          updateNameInputVisibility(false);
+          // 💡 搶先從快取取得會員身分，避免畫面閃爍
+          isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
+
+          showLoggedInState(payload.name, payload.email);
+          updateNameInputVisibility();
           loadSessions();
         } catch (e) {
           clearAuthStorage();
@@ -707,7 +709,7 @@
       userEmail = responsePayload.email.trim().toLowerCase();
       showLoggedInState(responsePayload.name, responsePayload.email);
       
-      updateNameInputVisibility(false);
+      updateNameInputVisibility();
       loadSessions();
     }
 
@@ -723,7 +725,7 @@
       
       document.getElementById('user-profile').style.display = 'none';
       document.getElementById('auth-box').style.display = 'block';
-      updateNameInputVisibility(false);
+      updateNameInputVisibility();
       
       loadSessions();
 
@@ -793,7 +795,6 @@
     }
 
     async function loadSessions(isManualRefresh = false) {
-      // 若為手動點擊刷新，進行冷卻時間檢查
       if (isManualRefresh && !checkRefreshCooldown()) {
         return;
       }
@@ -806,18 +807,22 @@
         let sessions = [];
         if (Array.isArray(data)) {
           sessions = data;
-          updateNameInputVisibility(false);
         } else if (data && Array.isArray(data.sessions)) {
           sessions = data.sessions;
+          
           if (userEmail) {
-            isCurrentUserMember = !!data.isMember;
-            localStorage.setItem('pickleball_is_member', isCurrentUserMember ? 'true' : 'false');
-            // 後端確認身份後，若確定是非會員才打開輸入框
-            updateNameInputVisibility(!isCurrentUserMember);
-          } else {
-            updateNameInputVisibility(false);
+            // 💡 關鍵單向鎖定：如果 API 認定是會員，或者本地紀錄本來就是會員，則維持會員身分！
+            if (data.isMember === true) {
+              isCurrentUserMember = true;
+              localStorage.setItem('pickleball_is_member', 'true');
+            } else if (localStorage.getItem('pickleball_is_member') !== 'true') {
+              isCurrentUserMember = false;
+              localStorage.setItem('pickleball_is_member', 'false');
+            }
           }
         }
+
+        updateNameInputVisibility();
 
         const btnContainer = document.getElementById('session-buttons');
         btnContainer.innerHTML = '';
