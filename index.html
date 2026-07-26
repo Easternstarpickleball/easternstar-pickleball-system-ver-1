@@ -833,7 +833,7 @@
           const prefix = getDayPrefix(s);
           const btn = document.createElement('button');
           const isSelected = selectedSession && selectedSession.id === s.id;
-          btn.className = `session-btn theme-${prefix}${isSelected ? 'selected' : ''}`;
+          btn.className = `session-btn theme-${prefix}${isSelected ? ' selected' : ''}`;
           btn.dataset.id = s.id;
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
