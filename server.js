@@ -41,7 +41,7 @@ const grabLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 
 const sessions = [
-  { id: "mon", name: "週一匹克球團", nameEn: "Monday Session", day: 1, limit: 1, waitlistLimit: 30, colorTheme: "mon-theme" },
+  { id: "mon", name: "週一匹克球團", nameEn: "Monday Session", day: 1, limit: 36, waitlistLimit: 30, colorTheme: "mon-theme" },
   // { id: "tue", name: "週二匹克球團", nameEn: "Tuesday Session", day: 2, limit: 36, waitlistLimit: 30, colorTheme: "tue-theme" },
   { id: "wed", name: "週三匹克球團", nameEn: "Wednesday Session", day: 3, limit: 36, waitlistLimit: 30, colorTheme: "wed-theme" },
   // { id: "thu", name: "週四匹克球團", nameEn: "Thursday Session", day: 4, limit: 36, waitlistLimit: 30, colorTheme: "thu-theme" },
