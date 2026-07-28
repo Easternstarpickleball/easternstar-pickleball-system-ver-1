@@ -1009,13 +1009,12 @@
         const result = await res.json();
         alert(result.message);
 
-        if (result.success) {
-          loadSessions();
-        } else {
-          grabBtn.disabled = false;
-        }
+        // 💡 關鍵修正：無論成功與否（即使是提示「已報名過」），都強制重新載入狀態以同步按鈕！
+        await loadSessions();
+
       } catch (err) {
         alert('❌ 送出失敗，請確認網路連線。');
+      } finally {
         grabBtn.disabled = false;
       }
     }
@@ -1051,13 +1050,12 @@
         const result = await res.json();
         alert(result.message);
 
-        if (result.success) {
-          loadSessions();
-        } else {
-          cancelBtn.disabled = false;
-        }
+        // 💡 關鍵修正：無論成功與否，皆重新載入畫面狀態
+        await loadSessions();
+
       } catch (err) {
         alert('❌ 取消失敗，請確認網路連線。');
+      } finally {
         cancelBtn.disabled = false;
       }
     }
