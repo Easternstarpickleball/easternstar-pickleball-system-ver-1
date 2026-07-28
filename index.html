@@ -794,15 +794,26 @@
       listContainer.innerHTML = html;
     }
 
+    // 💡 全域宣告：用於記錄最新一次發出的 API 請求序號
+    let currentSessionFetchId = 0;
+
     async function loadSessions(isManualRefresh = false) {
       if (isManualRefresh && !checkRefreshCooldown()) {
         return;
       }
 
+      // 💡 遞增請求序號，鎖定「這一次」請求
+      const fetchId = ++currentSessionFetchId;
+
       try {
         const url = userEmail ? `/api/sessions?userEmail=${encodeURIComponent(userEmail)}` : '/api/sessions';
         const res = await fetch(url);
         const data = await res.json();
+
+        // 💡 關鍵檢查：如果發出請求後，又有更最新的請求送出，代表這一次回應已經過期，直接廢棄！
+        if (fetchId !== currentSessionFetchId) {
+          return;
+        }
 
         let sessions = [];
         if (Array.isArray(data)) {
@@ -811,7 +822,6 @@
           sessions = data.sessions;
           
           if (userEmail) {
-            // 💡 關鍵單向鎖定：如果 API 認定是會員，或者本地紀錄本來就是會員，則維持會員身分！
             if (data.isMember === true) {
               isCurrentUserMember = true;
               localStorage.setItem('pickleball_is_member', 'true');
@@ -832,8 +842,10 @@
         sessions.forEach(s => {
           const prefix = getDayPrefix(s);
           const btn = document.createElement('button');
+          
+          // 💡 以 ID 比對是否為目前選取的場次
           const isSelected = selectedSession && selectedSession.id === s.id;
-          btn.className = `session-btn theme-${prefix}${isSelected ? ' selected' : ''}`;
+          btn.className = `session-btn theme-${prefix}${isSelected ? 'selected' : ''}`;
           btn.dataset.id = s.id;
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
@@ -868,6 +880,7 @@
           btn.onclick = () => selectSession(s);
           btnContainer.appendChild(btn);
 
+          // 💡 若為當前選取的場次，更新最新資料並重新整理按鈕狀態
           if (isSelected) {
             selectedSession = s; 
             updateSeatsDisplay(s);
