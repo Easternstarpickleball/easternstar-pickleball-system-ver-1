@@ -869,14 +869,9 @@
           btnContainer.appendChild(btn);
 
           if (isSelected) {
-            // 💡 1. 確保 selectedSession 拿的是 API 最新回傳的 s (包含最新的 isUserRegistered)
             selectedSession = s; 
-            
             updateSeatsDisplay(s);
-            
-            // 💡 2. 重新把最新狀態帶進去，計算按鈕是「顯示取消」還是「顯示報名」
-            updateActionButtons(selectedSession); 
-            
+            updateActionButtons(s);
             renderAttendees(s.attendees);
           }
         });
@@ -972,98 +967,98 @@
     }
 
     async function startGrab() {
-      if (!checkTokenExpiration()) return;
+  if (!checkTokenExpiration()) return;
 
-      if (!selectedSession || !userToken) {
-        alert(currentLang === 'en' ? "Please login with Google first!" : "請先登入 Google 帳號！");
-        return;
-      }
+  if (!selectedSession || !userToken) {
+    alert(currentLang === 'en' ? "Please login with Google first!" : "請先登入 Google 帳號！");
+    return;
+  }
 
-      const now = new Date();
-      const todayStr = getTodayDateStr();
-      if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
-        alert(currentLang === 'en' ? "Signups are closed after 18:00 on session day!" : "當天 18:00 後已截止報名！");
-        return;
-      }
+  const now = new Date();
+  const todayStr = getTodayDateStr();
+  if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
+    alert(currentLang === 'en' ? "Signups are closed after 18:00 on session day!" : "當天 18:00 後已截止報名！");
+    return;
+  }
 
-      let customNameVal = '';
-      if (!isCurrentUserMember) {
-        customNameVal = document.getElementById('custom-name').value.trim();
-        if (!customNameVal) {
-          alert(currentLang === 'en' ? "Please enter your Full Name!" : '請輸入您的「中文大名」！');
-          document.getElementById('custom-name').focus();
-          return;
-        }
-        saveCustomName(customNameVal); 
-      }
-
-      const grabBtn = document.getElementById('btn-grab');
-      grabBtn.disabled = true;
-
-      try {
-        const res = await fetch('/api/grab', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: selectedSession.id,
-            token: userToken,
-            customName: customNameVal
-          })
-        });
-
-        const result = await res.json();
-        alert(result.message);
-
-        // 💡 關鍵修正：無論成功與否（即使是提示「已報名過」），都強制重新載入狀態以同步按鈕！
-        await loadSessions();
-
-      } catch (err) {
-        alert('❌ 送出失敗，請確認網路連線。');
-      } finally {
-        grabBtn.disabled = false;
-      }
+  let customNameVal = '';
+  if (!isCurrentUserMember) {
+    customNameVal = document.getElementById('custom-name').value.trim();
+    if (!customNameVal) {
+      alert(currentLang === 'en' ? "Please enter your Full Name!" : '請輸入您的「中文大名」！');
+      document.getElementById('custom-name').focus();
+      return;
     }
+    saveCustomName(customNameVal); 
+  }
 
-    async function startCancel() {
-      if (!checkTokenExpiration()) return;
+  const grabBtn = document.getElementById('btn-grab');
+  grabBtn.disabled = true;
 
-      if (!selectedSession || !userToken) return;
+  try {
+    const res = await fetch('/api/grab', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: selectedSession.id,
+        token: userToken,
+        customName: customNameVal
+      })
+    });
 
-      const now = new Date();
-      const todayStr = getTodayDateStr();
-      if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
-        alert(currentLang === 'en' ? "Cancellations are not allowed after 18:00 on session day!" : "當天 18:00 後已禁止取消報名！");
-        return;
-      }
+    const result = await res.json();
+    alert(result.message);
 
-      const title = (currentLang === 'en' && selectedSession.nameEn) ? selectedSession.nameEn : selectedSession.name;
-      if (!confirm(`確定要取消【${title}】的報名嗎？`)) return;
+    // 💡 關鍵修正：無論成功與否（即使是提示「已報名過」），都強制重新載入狀態以同步按鈕！
+    await loadSessions();
 
-      const cancelBtn = document.getElementById('btn-cancel');
-      cancelBtn.disabled = true;
+  } catch (err) {
+    alert('❌ 送出失敗，請確認網路連線。');
+  } finally {
+    grabBtn.disabled = false;
+  }
+}
 
-      try {
-        const res = await fetch('/api/cancel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: selectedSession.id,
-            token: userToken
-          })
-        });
+async function startCancel() {
+  if (!checkTokenExpiration()) return;
 
-        const result = await res.json();
-        alert(result.message);
+  if (!selectedSession || !userToken) return;
 
-        // 💡 關鍵修正：無論成功與否，皆重新載入畫面狀態
-        await loadSessions();
+  const now = new Date();
+  const todayStr = getTodayDateStr();
+  if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
+    alert(currentLang === 'en' ? "Cancellations are not allowed after 18:00 on session day!" : "當天 18:00 後已禁止取消報名！");
+    return;
+  }
 
-      } catch (err) {
-        alert('❌ 取消失敗，請確認網路連線。');
-      } finally {
-        cancelBtn.disabled = false;
-      }
-    }
+  const title = (currentLang === 'en' && selectedSession.nameEn) ? selectedSession.nameEn : selectedSession.name;
+  if (!confirm(`確定要取消【${title}】的報名嗎？`)) return;
+
+  const cancelBtn = document.getElementById('btn-cancel');
+  cancelBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: selectedSession.id,
+        token: userToken
+      })
+    });
+
+    const result = await res.json();
+    alert(result.message);
+
+    // 💡 關鍵修正：無論成功與否，皆重新載入畫面狀態
+    await loadSessions();
+
+  } catch (err) {
+    alert('❌ 取消失敗，請確認網路連線。');
+  } finally {
+    cancelBtn.disabled = false;
+  }
+}
 
     async function adminTogglePause() {
       const secret = prompt("請輸入管理員密碼：");
