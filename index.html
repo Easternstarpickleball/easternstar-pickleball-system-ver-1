@@ -869,9 +869,14 @@
           btnContainer.appendChild(btn);
 
           if (isSelected) {
+            // 💡 1. 確保 selectedSession 拿的是 API 最新回傳的 s (包含最新的 isUserRegistered)
             selectedSession = s; 
+            
             updateSeatsDisplay(s);
-            updateActionButtons(s);
+            
+            // 💡 2. 重新把最新狀態帶進去，計算按鈕是「顯示取消」還是「顯示報名」
+            updateActionButtons(selectedSession); 
+            
             renderAttendees(s.attendees);
           }
         });
