@@ -908,51 +908,47 @@
     function updateActionButtons(session) {
       const grabBtn = document.getElementById('btn-grab');
       const cancelBtn = document.getElementById('btn-cancel');
-      const customNameGroup = document.getElementById('custom-name-group');
-
-      if (!grabBtn || !cancelBtn) return;
+      const t = i18n[currentLang];
 
       const now = new Date();
       const todayStr = getTodayDateStr();
-      const isExpired = session.dateStr < todayStr || (session.dateStr === todayStr && now.getHours() >= 18);
+      const currentHour = now.getHours();
 
-      // 1. 已報名該場次
+      const isPast = session.dateStr < todayStr;
+      const isToday = session.dateStr === todayStr;
+      const isClosedAfter18 = isToday && currentHour >= 18;
+
+      // 1. 如果超過當天 18:00 或為過去場次 -> 關閉報名與取消
+      if (isPast || isClosedAfter18) {
+        grabBtn.disabled = true;
+        grabBtn.innerText = currentLang === 'en' ? '⏰ Signup Closed (After 18:00)' : '⏰ 報名已截止 (18:00後)';
+
+        cancelBtn.disabled = true;
+        cancelBtn.innerText = currentLang === 'en' ? '⏰ Cancel Closed (After 18:00)' : '⏰ 禁止取消 (18:00後)';
+        return;
+      }
+
+      // 2. 已登入，且已報名該場次
       if (session.isUserRegistered) {
-        grabBtn.style.display = 'none';
-        cancelBtn.style.display = 'block';
-        cancelBtn.disabled = isExpired;
-        if (customNameGroup) customNameGroup.style.display = 'none';
-        return;
-      }
-
-      // 2. 未報名狀態
-      cancelBtn.style.display = 'none';
-      grabBtn.style.display = 'block';
-
-      // 🔒 檢查：過期或未開放
-      if (isExpired || session.isOpen === false) {
         grabBtn.disabled = true;
-        grabBtn.innerText = isExpired 
-          ? (currentLang === 'en' ? 'Closed' : '⏰ 已截止') 
-          : (currentLang === 'en' ? 'Locked' : '🔒 尚未開放');
-        return;
-      }
+        grabBtn.innerText = t.btnCompleted;
 
-      // 🔒 檢查：未驗證/未登入
-      if (typeof userToken !== 'undefined' && !userToken) {
-        grabBtn.disabled = true;
-        grabBtn.innerText = currentLang === 'en' ? '🔒 Please Sign In First' : '🔒 請先驗證 Google 帳號';
-        return;
-      }
+        cancelBtn.disabled = false;
+        cancelBtn.innerText = `❌ ${t.btnCancel}`;
+      } 
+      // 3. 尚未報名該場次
+      else {
+        // 🔒【唯一新增】：僅在這裡判斷「未登入」，未登入時把「綠色報名按鈕」設為灰色停用
+        if (!userToken) {
+          grabBtn.disabled = true;
+          grabBtn.innerText = currentLang === 'en' ? '🔒 Please Sign In First' : '🔒 請先驗證 Google 帳號';
+        } else {
+          grabBtn.disabled = false;
+          grabBtn.innerText = session.remainingSeats > 0 ? t.btnGrabMain : t.btnGrabWaitlist;
+        }
 
-      // ⚡ 正常開放且可報名狀態
-      grabBtn.disabled = false;
-      if (session.remainingSeats > 0) {
-        grabBtn.innerText = currentLang === 'en' ? 'Sign Up Now' : '⚡ 立刻報名';
-        grabBtn.style.background = 'var(--btn-grab-bg)';
-      } else {
-        grabBtn.innerText = currentLang === 'en' ? 'Join Waitlist' : '⏳ 候補報名';
-        grabBtn.style.background = 'var(--btn-waitlist-bg)';
+        cancelBtn.disabled = true;
+        cancelBtn.innerText = t.btnCancel;
       }
     }
 
