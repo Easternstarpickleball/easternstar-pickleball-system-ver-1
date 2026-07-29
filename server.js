@@ -430,8 +430,7 @@ app.get('/api/sessions', async (req, res) => {
 
     let isAfterOpen = isUserMember ? (now >= memberOpenTime) : (now >= nonMemberOpenTime);
     let isBeforeClose = now < closeTime;
-    let isOpen = isAfterOpen && isBeforeClose;
-    let isOpen = true
+    let isOpen = isAfterOpen && isBeforeClose
 
     let openTimeNotice = "";
     let openTimeNoticeEn = "";
