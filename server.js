@@ -262,67 +262,110 @@ function recalculateSessionStatus(sessionId) {
 const pendingSyncSessions = new Set();
 let isSheetSyncing = false;
 
+// 💡 全域 Debounce 計時器字典（以 sessionId 為 Key 獨立運作）
+const syncDebounceTimers = {};
+
+/**
+ * 防抖 (Debounce) 同步機制：
+ * 當有人報名/取消時觸發此函式。
+ * 若 15 秒內有新的操作，計時器會自動重置；
+ * 直到該場次連續 15 秒無人操作，才一次性批次寫入 Google Sheet。
+ */
 function triggerSheetSync(sessionId) {
-  pendingSyncSessions.add(sessionId);
+  // 1. 若該場次已經有排定的倒數任務，先取消舊計時器
+  if (syncDebounceTimers[sessionId]) {
+    clearTimeout(syncDebounceTimers[sessionId]);
+  }
+
+  // 2. 重新倒數 15 秒（可視需求調整為 10~20 秒）
+  syncDebounceTimers[sessionId] = setTimeout(async () => {
+    delete syncDebounceTimers[sessionId];
+    
+    // 將該場次加入隊列並執行寫入
+    pendingSyncSessions.add(sessionId);
+    await safeProcessSheetSyncQueue();
+  }, 15 * 1000);
 }
 
-setInterval(async () => {
-  if (pendingSyncSessions.size === 0 || isSheetSyncing) return;
+/**
+ * 包裝後的安全同步函式，帶有 try...catch 防護，確保狀態不卡死
+ */
+async function safeProcessSheetSyncQueue() {
+  if (isSheetSyncing) return;
   isSheetSyncing = true;
-  await processSheetSyncQueue();
-  isSheetSyncing = false;
-}, 3 * 60 * 1000);
+  
+  try {
+    await processSheetSyncQueue();
+  } catch (err) {
+    console.error("❌ 背景 Debounce 同步發生異常：", err.message);
+  } finally {
+    // 💡 關鍵：無論成功或失敗，務必解鎖狀態，防止系統鎖死
+    isSheetSyncing = false;
+  }
+}
 
 async function processSheetSyncQueue() {
   if (pendingSyncSessions.size === 0) return;
 
+  // 1. 複製當前需同步的 sessionId 陣列
   const sessionIdsToSync = Array.from(pendingSyncSessions);
 
   for (const sessionId of sessionIdsToSync) {
+    // 預先移除，若後續失敗會在 catch 中重新加回隊列
     pendingSyncSessions.delete(sessionId);
-    const targetSession = sessions.find(s => s.id === sessionId);
-    if (!targetSession) continue;
 
-    const snapshotAttendees = [...(sessionAttendees[sessionId] || [])];
+    const targetSession = sessions.find(s => s.id === sessionId); //
+    if (!targetSession) continue; //
+
+    // 2. 快照當前記憶體名單，避免非同步過程中有新報名寫入導致索引錯亂
+    const snapshotAttendees = [...(sessionAttendees[sessionId] || [])]; //
     
-    // 💡【關鍵】：如果該場次目前完全沒有人報名，就不動作、不建表
-    if (snapshotAttendees.length === 0) continue;
+    // 💡【關鍵】：若該場次目前完全無人報名，則不建表也不寫入
+    if (snapshotAttendees.length === 0) continue; //
 
-    const dateStr = getSessionTargetDate(targetSession.day);
+    const dateStr = getSessionTargetDate(targetSession.day); //
 
     try {
-      const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
-      let sheet = doc.sheetsByTitle[dateStr];
+      console.log(`⏳ [背景 Debounce 寫入中] 正在同步【${targetSession.name} (${dateStr})】...`);
+      const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID); //
+      let sheet = doc.sheetsByTitle[dateStr]; //
 
       // 💡 只有當「有人報名」且「分頁不存在」時，才建立這個場次的專屬分頁
       if (!sheet) {
-        console.log(`📄 收到首位報名，正在建立分頁【${dateStr}】...`);
+        console.log(`📄 收到首位報名，正在建立分頁【${dateStr}】...`); //
         sheet = await doc.addSheet({ 
           title: dateStr, 
-          headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態'] 
+          headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']  //
         });
+      } else {
+        // 存在舊分頁時清空並重設表頭
+        await sheet.clear(); //
+        await sheet.setHeaderRow(['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']); //
       }
 
-      await sheet.clear();
-      await sheet.setHeaderRow(['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']);
-
+      // 3. 轉化為寫入格式
       const rowsToAdd = snapshotAttendees.map(a => ({
-        '報名時間': a.timestamp || new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
-        '姓名/暱稱': a.name,
-        'Gmail 帳號': a.email,
-        '報名狀態': `${a.status} (${a.isMember ? '會員' : '非會員'})`
+        '報名時間': a.timestamp || new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }), //
+        '姓名/暱稱': a.name, //
+        'Gmail 帳號': a.email, //
+        '報名狀態': `${a.status} (${a.isMember ? '會員' : '非會員'})` //
       }));
 
-      await sheet.addRows(rowsToAdd);
+      // 4. 一次性批次新增數據，最省 API 次數
+      await sheet.addRows(rowsToAdd); //
 
-      if (sessionAttendees[sessionId].length !== snapshotAttendees.length) {
-        pendingSyncSessions.add(sessionId);
+      // 5. 檢查在寫入過程期間，是否有新的球友剛好報名；若有則重新排隊觸發補寫
+      if (sessionAttendees[sessionId].length !== snapshotAttendees.length) { //
+        pendingSyncSessions.add(sessionId); //
       }
 
-      console.log(`✅ 【${targetSession.name}】Google Sheet 同步成功！`);
+      console.log(`✅ 【${targetSession.name}】Google Sheet 批次同步完成！(共 ${rowsToAdd.length} 筆)`);
+
     } catch (err) {
-      console.error(`❌ 同步 Google Sheet 失敗 [${sessionId}]：`, err.message);
-      pendingSyncSessions.add(sessionId);
+      console.error(`❌ 同步 Google Sheet 失敗 [${sessionId}]：`, err.message); //
+      
+      // 發生 API rate limit 或連線失敗時，重新加回待同步隊列，等待下次觸發重試
+      pendingSyncSessions.add(sessionId); //
     }
   }
 }
