@@ -294,6 +294,8 @@ async function processSheetSyncQueue() {
     if (!targetSession) continue;
 
     const snapshotAttendees = [...(sessionAttendees[sessionId] || [])];
+    
+    // 💡【關鍵】：如果該場次目前完全沒有人報名，就不動作、不建表
     if (snapshotAttendees.length === 0) continue;
 
     const dateStr = getSessionTargetDate(targetSession.day);
@@ -302,7 +304,9 @@ async function processSheetSyncQueue() {
       const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
       let sheet = doc.sheetsByTitle[dateStr];
 
+      // 💡 只有當「有人報名」且「分頁不存在」時，才建立這個場次的專屬分頁
       if (!sheet) {
+        console.log(`📄 收到首位報名，正在建立分頁【${dateStr}】...`);
         sheet = await doc.addSheet({ 
           title: dateStr, 
           headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態'] 
@@ -312,16 +316,14 @@ async function processSheetSyncQueue() {
       await sheet.clear();
       await sheet.setHeaderRow(['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']);
 
-      if (snapshotAttendees.length > 0) {
-        const rowsToAdd = snapshotAttendees.map(a => ({
-          '報名時間': a.timestamp || new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
-          '姓名/暱稱': a.name,
-          'Gmail 帳號': a.email,
-          '報名狀態': `${a.status} (${a.isMember ? '會員' : '非會員'})`
-        }));
+      const rowsToAdd = snapshotAttendees.map(a => ({
+        '報名時間': a.timestamp || new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
+        '姓名/暱稱': a.name,
+        'Gmail 帳號': a.email,
+        '報名狀態': `${a.status} (${a.isMember ? '會員' : '非會員'})`
+      }));
 
-        await sheet.addRows(rowsToAdd);
-      }
+      await sheet.addRows(rowsToAdd);
 
       if (sessionAttendees[sessionId].length !== snapshotAttendees.length) {
         pendingSyncSessions.add(sessionId);
@@ -351,18 +353,11 @@ async function reloadFromSheet() {
 
     for (const s of sessions) {
       const dateStr = getSessionTargetDate(s.day);
+      // 只尋找試算表中既有的分頁
       let sheet = doc.sheetsByTitle[dateStr] || doc.sheetsByTitle[dateStr.replace(/-/g, '/')];
 
-      // 💡【重點新增】：如果找不到對應日期的分頁，自動建立該日期的新分頁與標頭
-      if (!sheet) {
-        console.log(`📄 找不到分頁【${dateStr}】，正在為【${s.name}】建立新分頁...`);
-        sheet = await doc.addSheet({ 
-          title: dateStr, 
-          headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態'] 
-        });
-      }
-
-      // 如果有分頁（舊的或剛剛新建的），開始讀取資料
+      // 💡 只有當分頁「已經存在」（代表當天之前有人報名過）時才讀取資料
+      // 如果分頁不存在，代表當前該場次還沒有人報名，保持記憶體為空即可，不自動建表
       if (sheet) {
         const rows = await sheet.getRows();
 
