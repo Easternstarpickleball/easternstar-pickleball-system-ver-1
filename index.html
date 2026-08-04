@@ -1022,13 +1022,21 @@
         const result = await res.json();
         alert(result.message);
 
-        // 💡 關鍵修正：無論成功與否（即使是提示「已報名過」），都強制重新載入狀態以同步按鈕！
+        // 💡 報名成功時，先在前端更新當前場次的報名狀態
+        if (result.success && selectedSession) {
+          selectedSession.isUserRegistered = true;
+        }
+
+        // 強制重新載入畫面狀態以同步所有場次資料
         await loadSessions();
 
       } catch (err) {
         alert('❌ 送出失敗，請確認網路連線。');
       } finally {
-        grabBtn.disabled = false;
+        // 💡 交由 updateActionButtons 來決定按鈕狀態，不寫死 disabled = false
+        if (selectedSession) {
+          updateActionButtons(selectedSession);
+        }
       }
     }
 
@@ -1063,16 +1071,24 @@
         const result = await res.json();
         alert(result.message);
 
-        // 💡 關鍵修正：無論成功與否，皆重新載入畫面狀態
+        // 💡 取消失敗/成功時，精準更新前端的報名狀態
+        if (result.success && selectedSession) {
+          selectedSession.isUserRegistered = false;
+        }
+
+        // 強制重新載入畫面狀態
         await loadSessions();
 
       } catch (err) {
         alert('❌ 取消失敗，請確認網路連線。');
       } finally {
-        cancelBtn.disabled = false;
+        // 💡 修正關鍵：根據當前最新狀態重新算按鈕啟停，防止已取消的按鈕被重新啟用
+        if (selectedSession) {
+          updateActionButtons(selectedSession);
+        }
       }
     }
-
+    
     async function adminTogglePause() {
       const secret = prompt("請輸入管理員密碼：");
       if (!secret) return;
