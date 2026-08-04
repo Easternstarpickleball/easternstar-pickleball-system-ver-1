@@ -150,12 +150,16 @@
       padding-bottom: 8px;
       margin-bottom: 12px;
     }
+
+    /* ⏳ 倒數計時卡片外殼 */
+    .session-item-wrapper {
+      margin: 14px 0;
+    }
     
     /* 📅 場次按鈕 */
     .session-btn { 
       display: block; 
       width: 100%; 
-      margin: 14px 0; 
       padding: 18px 16px; 
       font-size: 19px; 
       line-height: 1.4;
@@ -182,6 +186,41 @@
     body.dark-mode .session-btn.selected {
       border: 3px solid #ffffff !important;
       box-shadow: 0 0 15px rgba(255, 255, 255, 0.5) !important;
+    }
+
+    /* ⏱️ 按鈕下方倒數計時器樣式 */
+    .countdown-bar {
+      margin-top: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 8px;
+      background-color: rgba(229, 62, 62, 0.08);
+      color: #c53030;
+      border: 1px solid rgba(229, 62, 62, 0.2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      animation: fadeIn 0.3s ease;
+    }
+    body.dark-mode .countdown-bar {
+      background-color: rgba(254, 178, 178, 0.1);
+      color: #feb2b2;
+      border-color: rgba(254, 178, 178, 0.2);
+    }
+    .btn-timer-refresh {
+      background: #e53e3e;
+      color: white;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-timer-refresh:hover {
+      background: #c53030;
     }
 
     /* 各天別主題色 */
@@ -458,6 +497,8 @@
     let selectedSession = null;
     let userToken = null;
     let userEmail = null;
+    let currentLoadedSessions = []; // 快取當前載入的場次資訊
+    let countdownTimer = null; // 全域前端計時器
     
     // 💡 預先從 localStorage 讀取會員快取狀態
     let isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
@@ -832,6 +873,7 @@
           }
         }
 
+        currentLoadedSessions = sessions;
         updateNameInputVisibility();
 
         const btnContainer = document.getElementById('session-buttons');
@@ -841,21 +883,18 @@
 
         sessions.forEach(s => {
           const prefix = getDayPrefix(s);
-          const btn = document.createElement('button');
           
-          // 💡 以 ID 比對是否為目前選取的場次
+          // 💡 使用選取外殼元件 wrapper 包裹按鈕與倒數計時欄
+          const itemWrapper = document.createElement('div');
+          itemWrapper.className = 'session-item-wrapper';
+
+          const btn = document.createElement('button');
           const isSelected = selectedSession && selectedSession.id === s.id;
           btn.className = `session-btn theme-${prefix}${isSelected ? ' selected' : ''}`;
           btn.dataset.id = s.id;
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
-          const isFutureSession = s.dateStr > todayStr;
-
-          // if (!s.isOpen && isFutureSession) {
-          //   btn.disabled = true;
-          // } else {
-            btn.disabled = false;
-          // }
+          btn.disabled = false;
 
           let statusText = "";
           if (s.isOpen) {
@@ -876,9 +915,17 @@
           let userTag = s.isUserRegistered ? (currentLang === 'en' ? ' [Registered]' : ' [已報名]') : '';
           
           btn.innerHTML = `${sessionTitle} (${s.displayDate})<br><span style="font-size: 0.9em; font-weight: normal;">${statusText}${userTag}</span>`;
-
           btn.onclick = () => selectSession(s);
-          btnContainer.appendChild(btn);
+
+          // ⏳ 倒數計時顯示容器（放置在按鈕下方）
+          const countdownBar = document.createElement('div');
+          countdownBar.className = 'countdown-bar';
+          countdownBar.id = `countdown-bar-${s.id}`;
+          countdownBar.style.display = 'none';
+
+          itemWrapper.appendChild(btn);
+          itemWrapper.appendChild(countdownBar);
+          btnContainer.appendChild(itemWrapper);
 
           // 💡 若為當前選取的場次，更新最新資料並重新整理按鈕狀態
           if (isSelected) {
@@ -888,10 +935,82 @@
             renderAttendees(s.attendees);
           }
         });
+
+        // 啟動純前端本地倒數計時器
+        startCountdownInterval();
+
       } catch (err) {
         console.error("載入失敗：", err);
         document.getElementById('session-buttons').innerText = '❌ 連線失敗';
       }
+    }
+
+    // ⏱️ 計算場次目標開放時間（純前端計算）
+    function getTargetOpenTime(dateStr, isMember) {
+      const targetDate = new Date(dateStr + 'T00:00:00');
+      targetDate.setDate(targetDate.getDate() - 1); // 球敘前一天
+      const openHour = isMember ? 18 : 22; // 會員 18:00, 非會員 22:00
+      targetDate.setHours(openHour, 0, 0, 0);
+      return targetDate.getTime();
+    }
+
+    // ⏱️ 全域每秒倒數更新計時器 (不消耗 Server 資源)
+    function startCountdownInterval() {
+      if (countdownTimer) clearInterval(countdownTimer);
+
+      updateCountdownDisplay(); // 立即先計算一次
+      countdownTimer = setInterval(updateCountdownDisplay, 1000);
+    }
+
+    function updateCountdownDisplay() {
+      if (!currentLoadedSessions || currentLoadedSessions.length === 0) return;
+
+      const now = Date.now();
+
+      currentLoadedSessions.forEach(s => {
+        const barElem = document.getElementById(`countdown-bar-${s.id}`);
+        if (!barElem) return;
+
+        // 若場次已由伺服器開啓，不顯示倒數計時欄
+        if (s.isOpen) {
+          barElem.style.display = 'none';
+          return;
+        }
+
+        const openTime = getTargetOpenTime(s.dateStr, isCurrentUserMember);
+        const diff = openTime - now;
+
+        // 時間大於 0 秒，正處於倒數階段
+        if (diff > 0) {
+          barElem.style.display = 'flex';
+          const totalSeconds = Math.floor(diff / 1000);
+          const hours = Math.floor(totalSeconds / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+          const seconds = totalSeconds % 60;
+
+          let timeStr = "";
+          if (hours > 0) {
+            timeStr = `${hours}小時 ${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`;
+          } else {
+            timeStr = `${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`;
+          }
+
+          barElem.innerHTML = `
+            <span>⏳ 距離開放：<strong>${timeStr}</strong></span>
+          `;
+        } 
+        // 倒數歸零 (00 秒) 時顯示「立刻重新整理」提示與按鈕
+        else if (diff <= 0 && diff > -1800000) { // 歸零後 30 分鐘內提醒
+          barElem.style.display = 'flex';
+          barElem.innerHTML = `
+            <span style="color:#e53e3e; font-weight:bold;">🔥 已到開放時間，請立刻重新整理！</span>
+            <button class="btn-timer-refresh" onclick="event.stopPropagation(); loadSessions(true);">🔄 立刻重新整理</button>
+          `;
+        } 
+        else {
+          barElem.style.display = 'none';
+        }
+      });
     }
 
     function selectSession(session) {
@@ -951,7 +1070,6 @@
       } 
       // 3. 尚未報名該場次
       else {
-        // 🔒【唯一新增】：僅在這裡判斷「未登入」，未登入時把「綠色報名按鈕」設為灰色停用
         if (!userToken) {
           grabBtn.disabled = true;
           grabBtn.innerText = currentLang === 'en' ? '🔒 Please Sign In First' : '🔒 請先驗證 Google 帳號';
@@ -1033,7 +1151,6 @@
       } catch (err) {
         alert('❌ 送出失敗，請確認網路連線。');
       } finally {
-        // 💡 交由 updateActionButtons 來決定按鈕狀態，不寫死 disabled = false
         if (selectedSession) {
           updateActionButtons(selectedSession);
         }
@@ -1082,7 +1199,6 @@
       } catch (err) {
         alert('❌ 取消失敗，請確認網路連線。');
       } finally {
-        // 💡 修正關鍵：根據當前最新狀態重新算按鈕啟停，防止已取消的按鈕被重新啟用
         if (selectedSession) {
           updateActionButtons(selectedSession);
         }
