@@ -80,9 +80,21 @@ function getTaipeiNow() {
 
 function getSessionTargetDate(dayOfWeekTarget) {
   const now = getTaipeiNow();
-  const dayOfWeek = now.getDay();
-  let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
+  const dayOfWeek = now.getDay(); // 0: 日, 1: 一, ..., 6: 六
   
+  let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
+
+  // 💡 如果計算出來是 0 天（代表今天就是目標星期幾）
+  // 但今天已經過了 18:00 截止時間，目標日期應該要是「下週的這一天」(+7 天)
+  if (daysUntil === 0) {
+    const todayCloseTime = new Date(now);
+    todayCloseTime.setHours(18, 0, 0, 0);
+    
+    if (now >= todayCloseTime) {
+      daysUntil = 7;
+    }
+  }
+
   const target = new Date(now);
   target.setDate(now.getDate() + daysUntil);
 
@@ -341,6 +353,16 @@ async function reloadFromSheet() {
       const dateStr = getSessionTargetDate(s.day);
       let sheet = doc.sheetsByTitle[dateStr] || doc.sheetsByTitle[dateStr.replace(/-/g, '/')];
 
+      // 💡【重點新增】：如果找不到對應日期的分頁，自動建立該日期的新分頁與標頭
+      if (!sheet) {
+        console.log(`📄 找不到分頁【${dateStr}】，正在為【${s.name}】建立新分頁...`);
+        sheet = await doc.addSheet({ 
+          title: dateStr, 
+          headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態'] 
+        });
+      }
+
+      // 如果有分頁（舊的或剛剛新建的），開始讀取資料
       if (sheet) {
         const rows = await sheet.getRows();
 
