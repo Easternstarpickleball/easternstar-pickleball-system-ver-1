@@ -894,7 +894,13 @@
           btn.dataset.id = s.id;
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
-          btn.disabled = false;
+          
+          // 💡 未開放場次設為 disabled（會自動呈灰底且不可點選）
+          if (!s.isOpen) {
+            btn.disabled = true;
+          } else {
+            btn.disabled = false;
+          }
 
           let statusText = "";
           if (s.isOpen) {
@@ -981,7 +987,7 @@
         const openTime = getTargetOpenTime(s.dateStr, isCurrentUserMember);
         const diff = openTime - now;
 
-        // 💡 只有在「距離開放剩下 24 小時（前一天）以內」且「尚未開放」時才顯示倒數
+        // 💡 距離開放剩下 24 小時（前一天）以內且尚未開放時顯示倒數
         if (diff > 0 && diff <= ONE_DAY_MS) {
           barElem.style.display = 'flex';
           const totalSeconds = Math.floor(diff / 1000);
