@@ -851,11 +851,11 @@
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
           const isFutureSession = s.dateStr > todayStr;
 
-          if (!s.isOpen && isFutureSession) {
-            btn.disabled = true;
-          } else {
+          // if (!s.isOpen && isFutureSession) {
+          //   btn.disabled = true;
+          // } else {
             btn.disabled = false;
-          }
+          // }
 
           let statusText = "";
           if (s.isOpen) {
