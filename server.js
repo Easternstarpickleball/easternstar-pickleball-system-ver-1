@@ -95,16 +95,6 @@ function getSessionTargetDate(dayOfWeekTarget) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-  const target = new Date(now);
-  target.setDate(now.getDate() + daysUntil);
-
-  const yyyy = target.getFullYear();
-  const mm = String(target.getMonth() + 1).padStart(2, '0');
-  const dd = String(target.getDate()).padStart(2, '0');
-
-  return `${yyyy}-${mm}-${dd}`;
-}
-
 async function getGoogleDoc(spreadsheetId) {
   const jsonKeyString = process.env.GOOGLE_JSON_KEY;
   if (!jsonKeyString) throw new Error('❌ 缺少必要的環境變數：GOOGLE_JSON_KEY');
