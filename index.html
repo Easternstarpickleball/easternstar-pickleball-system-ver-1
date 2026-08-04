@@ -191,7 +191,7 @@
     /* ⏱️ 按鈕下方倒數計時器樣式 */
     .countdown-bar {
       margin-top: 6px;
-      padding: 6px 12px;
+      padding: 8px 12px;
       font-size: 13px;
       font-weight: 600;
       border-radius: 8px;
@@ -212,7 +212,7 @@
       background: #e53e3e;
       color: white;
       border: none;
-      padding: 4px 10px;
+      padding: 5px 10px;
       border-radius: 6px;
       font-size: 12px;
       font-weight: bold;
@@ -917,7 +917,7 @@
           btn.innerHTML = `${sessionTitle} (${s.displayDate})<br><span style="font-size: 0.9em; font-weight: normal;">${statusText}${userTag}</span>`;
           btn.onclick = () => selectSession(s);
 
-          // ⏳ 倒數計時顯示容器（放置在按鈕下方）
+          // ⏳ 倒數計時顯示容器（放置在按鈕正下方）
           const countdownBar = document.createElement('div');
           countdownBar.className = 'countdown-bar';
           countdownBar.id = `countdown-bar-${s.id}`;
@@ -954,7 +954,7 @@
       return targetDate.getTime();
     }
 
-    // ⏱️ 全域每秒倒數更新計時器 (不消耗 Server 資源)
+    // ⏱️ 全域每秒倒數更新計時器 (純本地運算，不消耗 Server 資源)
     function startCountdownInterval() {
       if (countdownTimer) clearInterval(countdownTimer);
 
@@ -966,12 +966,13 @@
       if (!currentLoadedSessions || currentLoadedSessions.length === 0) return;
 
       const now = Date.now();
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000; // 24 小時的毫秒數
 
       currentLoadedSessions.forEach(s => {
         const barElem = document.getElementById(`countdown-bar-${s.id}`);
         if (!barElem) return;
 
-        // 若場次已由伺服器開啓，不顯示倒數計時欄
+        // 若場次已由伺服器開啓，隱藏倒數計時欄
         if (s.isOpen) {
           barElem.style.display = 'none';
           return;
@@ -980,8 +981,8 @@
         const openTime = getTargetOpenTime(s.dateStr, isCurrentUserMember);
         const diff = openTime - now;
 
-        // 時間大於 0 秒，正處於倒數階段
-        if (diff > 0) {
+        // 💡 只有在「距離開放剩下 24 小時（前一天）以內」且「尚未開放」時才顯示倒數
+        if (diff > 0 && diff <= ONE_DAY_MS) {
           barElem.style.display = 'flex';
           const totalSeconds = Math.floor(diff / 1000);
           const hours = Math.floor(totalSeconds / 3600);
@@ -1008,6 +1009,7 @@
           `;
         } 
         else {
+          // 超過 24 小時或非當天開放，直接隱藏
           barElem.style.display = 'none';
         }
       });

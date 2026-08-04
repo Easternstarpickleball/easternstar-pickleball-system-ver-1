@@ -480,8 +480,8 @@ app.get('/api/sessions', async (req, res) => {
 
     let isAfterOpen = isUserMember ? (now >= memberOpenTime) : (now >= nonMemberOpenTime);
     let isBeforeClose = now < closeTime;
-    // let isOpen = isAfterOpen && isBeforeClose
-    let isOpen = true
+    let isOpen = isAfterOpen && isBeforeClose
+    // let isOpen = true
 
     let openTimeNotice = "";
     let openTimeNoticeEn = "";
@@ -592,9 +592,9 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
 
   const requiredOpenTime = memberInfo.isMember ? memberOpenTime : nonMemberOpenTime;
 
-  // if (now < requiredOpenTime && !isStressTest) {
-  //   return res.json({ success: false, message: "⏰ 該場次尚未開放報名！" });
-  // }
+  if (now < requiredOpenTime && !isStressTest) {
+    return res.json({ success: false, message: "⏰ 該場次尚未開放報名！" });
+  }
 
   let finalUserName = memberInfo.userName;
 
