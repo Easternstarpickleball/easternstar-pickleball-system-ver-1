@@ -79,21 +79,21 @@ function getTaipeiNow() {
 }
 
 function getSessionTargetDate(dayOfWeekTarget) {
-  const now = getTaipeiNow();
+  const now = getTaipeiNow(); // 取得台北當前時間
   const dayOfWeek = now.getDay(); // 0: 日, 1: 一, ..., 6: 六
   
+  // 自動計算距離目標星期幾還有幾天 (0 ~ 6 天)
   let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
 
-  // 💡 如果計算出來是 0 天（代表今天就是目標星期幾）
-  // 但今天已經過了 18:00 截止時間，目標日期應該要是「下週的這一天」(+7 天)
-  if (daysUntil === 0) {
-    const todayCloseTime = new Date(now);
-    todayCloseTime.setHours(18, 0, 0, 0);
-    
-    if (now >= todayCloseTime) {
-      daysUntil = 7;
-    }
-  }
+  const target = new Date(now);
+  target.setDate(now.getDate() + daysUntil);
+
+  const yyyy = target.getFullYear();
+  const mm = String(target.getMonth() + 1).padStart(2, '0');
+  const dd = String(target.getDate()).padStart(2, '0');
+
+  return `${yyyy}-${mm}-${dd}`;
+}
 
   const target = new Date(now);
   target.setDate(now.getDate() + daysUntil);
