@@ -414,10 +414,8 @@
 
       <div id="auth-box" style="margin-bottom: 20px;">
         <p style="color: var(--text-main); font-size: 16px; font-weight: 600;" data-i18n="googleAuthHint">請先驗證 Google 帳號：</p>
-        <div id="g_id_onload"
-             <!-- data-client_id="329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com" -->
-             <!-- data-callback="handleCredentialResponse"> --> -->
-        </div>
+        <div id="g_id_onload"></div>
+            
         <div class="g_id_signin" data-type="standard"></div>
       </div>
 
@@ -799,24 +797,29 @@
     }
 
     function logout() {
+      // 1. 清理本地儲存的憑證與狀態
       clearAuthStorage();
-      
+
+      // 2. 停用 Google 自動登入機制（關鍵：防止登出後立刻又被自動登入）
+      if (window.google && google.accounts && google.accounts.id) {
+        google.accounts.id.disableAutoSelect();
+      }
+
+      // 3. 切換 UI 視圖
       document.getElementById('user-profile').style.display = 'none';
       document.getElementById('auth-box').style.display = 'block';
       updateNameInputVisibility();
-      
+
+      // 4. 重置選擇場次並重新載入（以訪客身份）
+      selectedSession = null;
       loadSessions();
 
+      // 5. 確保登入按鈕有正常顯示（利用先前初始化好的 SDK 直接渲染）
       if (window.google && google.accounts && google.accounts.id) {
-        google.accounts.id.initialize({
-          client_id: "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com",
-          callback: handleCredentialResponse
-        });
-        google.accounts.id.renderButton(
-          document.querySelector('.g_id_signin'),
-          { theme: "outline", size: "large" }
-        );
-        google.accounts.id.prompt();
+        const signinBtn = document.querySelector('.g_id_signin');
+        if (signinBtn) {
+          google.accounts.id.renderButton(signinBtn, { theme: "outline", size: "large" });
+        }
       }
     }
 
