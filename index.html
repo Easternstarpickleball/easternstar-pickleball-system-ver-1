@@ -712,34 +712,36 @@
     }
 
     window.onload = function() {
-      if (localStorage.getItem('app_theme') === 'dark') {
-        document.body.classList.add('dark-mode');
+  if (localStorage.getItem('app_theme') === 'dark') {
+    document.body.classList.add('dark-mode');
+  }
+
+  applyLanguage();
+
+  // 1. 先嘗試從 LocalStorage 恢復登入 UI (讓使用者一開頁面就看到自己已登入)
+  const savedToken = localStorage.getItem('pickleball_token');
+  if (savedToken) {
+    try {
+      const payload = parseJwt(savedToken);
+      if (payload && payload.email) {
+        userToken = savedToken;
+        userEmail = payload.email.trim().toLowerCase();
+        isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
+
+        showLoggedInState(payload.name, payload.email);
+        updateNameInputVisibility();
       }
+    } catch (e) {
+      clearAuthStorage();
+    }
+  }
 
-      applyLanguage();
+  // 2. 載入場次資料
+  loadSessions();
 
-      const savedToken = localStorage.getItem('pickleball_token');
-      if (savedToken && checkTokenExpiration()) {
-        try {
-          const payload = parseJwt(savedToken);
-          userToken = savedToken;
-          userEmail = payload.email.trim().toLowerCase();
-          
-          isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
-
-          showLoggedInState(payload.name, payload.email);
-          updateNameInputVisibility();
-          loadSessions();
-        } catch (e) {
-          clearAuthStorage();
-          loadSessions();
-          tryInitGoogleOneTap();
-        }
-      } else {
-        loadSessions();
-        tryInitGoogleOneTap();
-      }
-    };
+  // 3. 啟動 Google One Tap（auto_select 會在背景自動核發最新 Token，順便更新過期的 Token）
+  tryInitGoogleOneTap();
+};
 
     function tryInitGoogleOneTap() {
       if (window.google && google.accounts && google.accounts.id) {
