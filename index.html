@@ -497,14 +497,12 @@
     let selectedSession = null;
     let userToken = null;
     let userEmail = null;
-    let currentLoadedSessions = []; // 快取當前載入的場次資訊
-    let countdownTimer = null; // 全域前端計時器
+    let currentLoadedSessions = []; 
+    let countdownTimer = null; 
     
-    // 💡 預先從 localStorage 讀取會員快取狀態
     let isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
     let currentLang = localStorage.getItem('app_lang') || 'zh';
 
-    // 💡 防重整/請求頻繁冷卻機制（限制 2 秒內不可連續刷新）
     function checkRefreshCooldown() {
       const LAST_REFRESH_KEY = 'pickleball_last_refresh';
       const COOLDOWN_MS = 2000;
@@ -701,7 +699,6 @@
       isCurrentUserMember = false;
     }
 
-    // 💡 確定只有「已登入 且 明確為非會員」時才顯示輸入框
     function updateNameInputVisibility() {
       const nameBox = document.getElementById('non-member-name-box');
       if (!nameBox) return;
@@ -728,7 +725,6 @@
           userToken = savedToken;
           userEmail = payload.email.trim().toLowerCase();
           
-          // 💡 搶先從快取取得會員身分，避免畫面閃爍
           isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
 
           showLoggedInState(payload.name, payload.email);
@@ -835,7 +831,6 @@
       listContainer.innerHTML = html;
     }
 
-    // 💡 全域宣告：用於記錄最新一次發出的 API 請求序號
     let currentSessionFetchId = 0;
 
     async function loadSessions(isManualRefresh = false) {
@@ -843,7 +838,6 @@
         return;
       }
 
-      // 💡 遞增請求序號，鎖定「這一次」請求
       const fetchId = ++currentSessionFetchId;
 
       try {
@@ -851,7 +845,6 @@
         const res = await fetch(url);
         const data = await res.json();
 
-        // 💡 關鍵檢查：如果發出請求後，又有更最新的請求送出，代表這一次回應已經過期，直接廢棄！
         if (fetchId !== currentSessionFetchId) {
           return;
         }
@@ -884,7 +877,6 @@
         sessions.forEach(s => {
           const prefix = getDayPrefix(s);
           
-          // 💡 使用選取外殼元件 wrapper 包裹按鈕與倒數計時欄
           const itemWrapper = document.createElement('div');
           itemWrapper.className = 'session-item-wrapper';
 
@@ -896,7 +888,6 @@
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
           const isFutureSession = s.dateStr > todayStr;
 
-          // 💡 關鍵修改：只鎖「未開放 且 為未來場次」；過去或開放中則不鎖住按鈕
           if (!s.isOpen && isFutureSession) {
             btn.disabled = true;
           } else {
@@ -924,7 +915,6 @@
           btn.innerHTML = `${sessionTitle} (${s.displayDate})<br><span style="font-size: 0.9em; font-weight: normal;">${statusText}${userTag}</span>`;
           btn.onclick = () => selectSession(s);
 
-          // ⏳ 倒數計時顯示容器（放置在按鈕正下方）
           const countdownBar = document.createElement('div');
           countdownBar.className = 'countdown-bar';
           countdownBar.id = `countdown-bar-${s.id}`;
@@ -934,7 +924,6 @@
           itemWrapper.appendChild(countdownBar);
           btnContainer.appendChild(itemWrapper);
 
-          // 💡 若為當前選取的場次，更新最新資料並重新整理按鈕狀態
           if (isSelected) {
             selectedSession = s; 
             updateSeatsDisplay(s);
@@ -943,7 +932,6 @@
           }
         });
 
-        // 啟動純前端本地倒數計時器
         startCountdownInterval();
 
       } catch (err) {
@@ -952,20 +940,18 @@
       }
     }
 
-    // ⏱️ 計算場次目標開放時間（純前端計算）
     function getTargetOpenTime(dateStr, isMember) {
       const targetDate = new Date(dateStr + 'T00:00:00');
-      targetDate.setDate(targetDate.getDate() - 1); // 球敘前一天
-      const openHour = isMember ? 18 : 22; // 會員 18:00, 非會員 22:00
+      targetDate.setDate(targetDate.getDate() - 1); 
+      const openHour = isMember ? 18 : 22; 
       targetDate.setHours(openHour, 0, 0, 0);
       return targetDate.getTime();
     }
 
-    // ⏱️ 全域每秒倒數更新計時器 (純本地運算，不消耗 Server 資源)
     function startCountdownInterval() {
       if (countdownTimer) clearInterval(countdownTimer);
 
-      updateCountdownDisplay(); // 立即先計算一次
+      updateCountdownDisplay(); 
       countdownTimer = setInterval(updateCountdownDisplay, 1000);
     }
 
@@ -973,13 +959,12 @@
       if (!currentLoadedSessions || currentLoadedSessions.length === 0) return;
 
       const now = Date.now();
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000; // 24 小時的毫秒數
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000; 
 
       currentLoadedSessions.forEach(s => {
         const barElem = document.getElementById(`countdown-bar-${s.id}`);
         if (!barElem) return;
 
-        // 若場次已由伺服器開啓，隱藏倒數計時欄
         if (s.isOpen) {
           barElem.style.display = 'none';
           return;
@@ -988,7 +973,6 @@
         const openTime = getTargetOpenTime(s.dateStr, isCurrentUserMember);
         const diff = openTime - now;
 
-        // 💡 距離開放剩下 24 小時（前一天）以內且尚未開放時顯示倒數
         if (diff > 0 && diff <= ONE_DAY_MS) {
           barElem.style.display = 'flex';
           const totalSeconds = Math.floor(diff / 1000);
@@ -1007,8 +991,7 @@
             <span>⏳ 距離開放：<strong>${timeStr}</strong></span>
           `;
         } 
-        // 倒數歸零 (00 秒) 時顯示「立刻重新整理」提示與按鈕
-        else if (diff <= 0 && diff > -1800000) { // 歸零後 30 分鐘內提醒
+        else if (diff <= 0 && diff > -1800000) { 
           barElem.style.display = 'flex';
           barElem.innerHTML = `
             <span style="color:#e53e3e; font-weight:bold;">🔥 已到開放時間，請立刻重新整理！</span>
@@ -1016,7 +999,6 @@
           `;
         } 
         else {
-          // 超過 24 小時或非當天開放，直接隱藏
           barElem.style.display = 'none';
         }
       });
@@ -1059,7 +1041,6 @@
       const isToday = session.dateStr === todayStr;
       const isClosedAfter18 = isToday && currentHour >= 18;
 
-      // 1. 如果超過當天 18:00 或為過去場次 -> 關閉報名與取消
       if (isPast || isClosedAfter18) {
         grabBtn.disabled = true;
         grabBtn.innerText = currentLang === 'en' ? '⏰ Signup Closed (After 18:00)' : '⏰ 報名已截止 (18:00後)';
@@ -1069,7 +1050,6 @@
         return;
       }
 
-      // 2. 已登入，且已報名該場次
       if (session.isUserRegistered) {
         grabBtn.disabled = true;
         grabBtn.innerText = t.btnCompleted;
@@ -1077,7 +1057,6 @@
         cancelBtn.disabled = false;
         cancelBtn.innerText = `❌ ${t.btnCancel}`;
       } 
-      // 3. 尚未報名該場次
       else {
         if (!userToken) {
           grabBtn.disabled = true;
@@ -1149,12 +1128,10 @@
         const result = await res.json();
         alert(result.message);
 
-        // 💡 報名成功時，先在前端更新當前場次的報名狀態
         if (result.success && selectedSession) {
           selectedSession.isUserRegistered = true;
         }
 
-        // 強制重新載入畫面狀態以同步所有場次資料
         await loadSessions();
 
       } catch (err) {
@@ -1197,12 +1174,10 @@
         const result = await res.json();
         alert(result.message);
 
-        // 💡 取消失敗/成功時，精準更新前端的報名狀態
         if (result.success && selectedSession) {
           selectedSession.isUserRegistered = false;
         }
 
-        // 強制重新載入畫面狀態
         await loadSessions();
 
       } catch (err) {

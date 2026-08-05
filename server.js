@@ -54,12 +54,14 @@ const seatsCache = {};
 const waitlistCache = {};
 const registeredEmails = {};
 const sessionAttendees = {}; 
+const sessionDates = {}; // 💡 修改點 1：記錄每個場次當前的實體日期 (YYYY-MM-DD)
 
 sessions.forEach(s => {
   seatsCache[s.id] = s.limit;
   waitlistCache[s.id] = 0;
   registeredEmails[s.id] = new Set();
   sessionAttendees[s.id] = [];
+  sessionDates[s.id] = ""; 
 });
 
 let memberMapCache = new Map();
@@ -78,21 +80,57 @@ function getTaipeiNow() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
 }
 
-function getSessionTargetDate(dayOfWeekTarget) {
-  const now = getTaipeiNow(); // 取得台北當前時間
-  const dayOfWeek = now.getDay(); // 0: 日, 1: 一, ..., 6: 六
-  
-  // 自動計算距離目標星期幾還有幾天 (0 ~ 6 天)
+function formatDateStr(dateObj) {
+  const yyyy = dateObj.getFullYear();
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// 💡 修改點 2：計算目標日期與檢查過期自動清空記憶體名單
+function calculateInitialSessionDate(dayOfWeekTarget) {
+  const now = getTaipeiNow();
+  const dayOfWeek = now.getDay();
   let daysUntil = (dayOfWeekTarget - dayOfWeek + 7) % 7;
 
   const target = new Date(now);
   target.setDate(now.getDate() + daysUntil);
+  return formatDateStr(target);
+}
 
-  const yyyy = target.getFullYear();
-  const mm = String(target.getMonth() + 1).padStart(2, '0');
-  const dd = String(target.getDate()).padStart(2, '0');
+function checkAndResetExpiredSessions() {
+  const now = getTaipeiNow();
+  const todayStr = formatDateStr(now);
 
-  return `${yyyy}-${mm}-${dd}`;
+  sessions.forEach(s => {
+    // 若尚未初始化日期，進行首次計算
+    if (!sessionDates[s.id]) {
+      sessionDates[s.id] = calculateInitialSessionDate(s.day);
+    }
+
+    // 💡【核心修復】：若場次日期小於今天（跨過午夜 12 點，該場次已成為過去）
+    if (sessionDates[s.id] < todayStr) {
+      console.log(`🧹 [跨週重置] 場次【${s.name}】原日期 ${sessionDates[s.id]} 已過期，正在重置並清空記憶體名單...`);
+      
+      // 日期自動加 7 天推進至下週同一天
+      const oldDate = new Date(sessionDates[s.id] + 'T00:00:00+08:00');
+      oldDate.setDate(oldDate.getDate() + 7);
+      sessionDates[s.id] = formatDateStr(oldDate);
+
+      // 🔥 徹底清空記憶體名單
+      sessionAttendees[s.id] = [];
+      registeredEmails[s.id] = new Set();
+      seatsCache[s.id] = s.limit;
+      waitlistCache[s.id] = 0;
+
+      console.log(`✨ [跨週重置] 場次【${s.name}】已更新為下週日期：${sessionDates[s.id]}，名單已完全重置！`);
+    }
+  });
+}
+
+function getSessionTargetDate(sessionId) {
+  checkAndResetExpiredSessions();
+  return sessionDates[sessionId];
 }
 
 async function getGoogleDoc(spreadsheetId) {
@@ -183,7 +221,6 @@ async function saveBlacklistToSheet() {
   }
 }
 
-// 🔄 更新會員名單快取 (Stale-While-Revalidate 舊快取不刪除策略)
 async function refreshMemberCache() {
   try {
     console.log('🔄 正在更新會員名單快取...');
@@ -214,7 +251,6 @@ async function refreshMemberCache() {
       newMap.set(email, finalName);
     });
 
-    // 抓取成功才替換 Map，舊會員資料絕不失效
     memberMapCache = newMap;
     lastFetchTime = Date.now();
     console.log(`✅ 會員快取更新完成！共抓取到 ${memberMapCache.size} 筆會員資料。`);
@@ -225,6 +261,7 @@ async function refreshMemberCache() {
 
 setInterval(async () => {
   await refreshMemberCache();
+  checkAndResetExpiredSessions(); // 定時排程檢查過期重置
 }, 5 * 60 * 1000);
 
 function checkMemberStatus(userEmail) {
@@ -261,35 +298,20 @@ function recalculateSessionStatus(sessionId) {
 
 const pendingSyncSessions = new Set();
 let isSheetSyncing = false;
-
-// 💡 全域 Debounce 計時器字典（以 sessionId 為 Key 獨立運作）
 const syncDebounceTimers = {};
 
-/**
- * 防抖 (Debounce) 同步機制：
- * 當有人報名/取消時觸發此函式。
- * 若 15 秒內有新的操作，計時器會自動重置；
- * 直到該場次連續 15 秒無人操作，才一次性批次寫入 Google Sheet。
- */
 function triggerSheetSync(sessionId) {
-  // 1. 若該場次已經有排定的倒數任務，先取消舊計時器
   if (syncDebounceTimers[sessionId]) {
     clearTimeout(syncDebounceTimers[sessionId]);
   }
 
-  // 2. 重新倒數 15 秒（可視需求調整為 10~20 秒）
   syncDebounceTimers[sessionId] = setTimeout(async () => {
     delete syncDebounceTimers[sessionId];
-    
-    // 將該場次加入隊列並執行寫入
     pendingSyncSessions.add(sessionId);
     await safeProcessSheetSyncQueue();
   }, 15 * 1000);
 }
 
-/**
- * 包裝後的安全同步函式，帶有 try...catch 防護，確保狀態不卡死
- */
 async function safeProcessSheetSyncQueue() {
   if (isSheetSyncing) return;
   isSheetSyncing = true;
@@ -299,7 +321,6 @@ async function safeProcessSheetSyncQueue() {
   } catch (err) {
     console.error("❌ 背景 Debounce 同步發生異常：", err.message);
   } finally {
-    // 💡 關鍵：無論成功或失敗，務必解鎖狀態，防止系統鎖死
     isSheetSyncing = false;
   }
 }
@@ -307,65 +328,53 @@ async function safeProcessSheetSyncQueue() {
 async function processSheetSyncQueue() {
   if (pendingSyncSessions.size === 0) return;
 
-  // 1. 複製當前需同步的 sessionId 陣列
   const sessionIdsToSync = Array.from(pendingSyncSessions);
 
   for (const sessionId of sessionIdsToSync) {
-    // 預先移除，若後續失敗會在 catch 中重新加回隊列
     pendingSyncSessions.delete(sessionId);
 
-    const targetSession = sessions.find(s => s.id === sessionId); //
-    if (!targetSession) continue; //
+    const targetSession = sessions.find(s => s.id === sessionId);
+    if (!targetSession) continue;
 
-    // 2. 快照當前記憶體名單，避免非同步過程中有新報名寫入導致索引錯亂
-    const snapshotAttendees = [...(sessionAttendees[sessionId] || [])]; //
-    
-    // 💡【關鍵】：若該場次目前完全無人報名，則不建表也不寫入
-    if (snapshotAttendees.length === 0) continue; //
+    const snapshotAttendees = [...(sessionAttendees[sessionId] || [])];
+    if (snapshotAttendees.length === 0) continue;
 
-    const dateStr = getSessionTargetDate(targetSession.day); //
+    const dateStr = getSessionTargetDate(targetSession.id);
 
     try {
       console.log(`⏳ [背景 Debounce 寫入中] 正在同步【${targetSession.name} (${dateStr})】...`);
-      const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID); //
-      let sheet = doc.sheetsByTitle[dateStr]; //
+      const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
+      let sheet = doc.sheetsByTitle[dateStr];
 
-      // 💡 只有當「有人報名」且「分頁不存在」時，才建立這個場次的專屬分頁
       if (!sheet) {
-        console.log(`📄 收到首位報名，正在建立分頁【${dateStr}】...`); //
+        console.log(`📄 收到首位報名，正在建立分頁【${dateStr}】...`);
         sheet = await doc.addSheet({ 
           title: dateStr, 
-          headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']  //
+          headerValues: ['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態'] 
         });
       } else {
-        // 存在舊分頁時清空並重設表頭
-        await sheet.clear(); //
-        await sheet.setHeaderRow(['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']); //
+        await sheet.clear();
+        await sheet.setHeaderRow(['報名時間', '姓名/暱稱', 'Gmail 帳號', '報名狀態']);
       }
 
-      // 3. 轉化為寫入格式
       const rowsToAdd = snapshotAttendees.map(a => ({
-        '報名時間': a.timestamp || new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }), //
-        '姓名/暱稱': a.name, //
-        'Gmail 帳號': a.email, //
-        '報名狀態': `${a.status} (${a.isMember ? '會員' : '非會員'})` //
+        '報名時間': a.timestamp || new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
+        '姓名/暱稱': a.name,
+        'Gmail 帳號': a.email,
+        '報名狀態': `${a.status} (${a.isMember ? '會員' : '非會員'})`
       }));
 
-      // 4. 一次性批次新增數據，最省 API 次數
-      await sheet.addRows(rowsToAdd); //
+      await sheet.addRows(rowsToAdd);
 
-      // 5. 檢查在寫入過程期間，是否有新的球友剛好報名；若有則重新排隊觸發補寫
-      if (sessionAttendees[sessionId].length !== snapshotAttendees.length) { //
-        pendingSyncSessions.add(sessionId); //
+      if (sessionAttendees[sessionId].length !== snapshotAttendees.length) {
+        pendingSyncSessions.add(sessionId);
       }
 
       console.log(`✅ 【${targetSession.name}】Google Sheet 批次同步完成！(共 ${rowsToAdd.length} 筆)`);
 
     } catch (err) {
-      console.error(`❌ 同步 Google Sheet 失敗 [${sessionId}]：`, err.message); //
-      
-      // 發生 API rate limit 或連線失敗時，重新加回待同步隊列，等待下次觸發重試
-      pendingSyncSessions.add(sessionId); //
+      console.error(`❌ 同步 Google Sheet 失敗 [${sessionId}]：`, err.message);
+      pendingSyncSessions.add(sessionId);
     }
   }
 }
@@ -376,6 +385,7 @@ async function reloadFromSheet() {
     const doc = await getGoogleDoc(SIGNUP_SPREADSHEET_ID);
 
     await refreshMemberCache();
+    checkAndResetExpiredSessions(); // 💡 確保試算表重載時會自動帶入正確最新日期
 
     sessions.forEach(s => {
       seatsCache[s.id] = s.limit;
@@ -385,12 +395,9 @@ async function reloadFromSheet() {
     });
 
     for (const s of sessions) {
-      const dateStr = getSessionTargetDate(s.day);
-      // 只尋找試算表中既有的分頁
+      const dateStr = getSessionTargetDate(s.id);
       let sheet = doc.sheetsByTitle[dateStr] || doc.sheetsByTitle[dateStr.replace(/-/g, '/')];
 
-      // 💡 只有當分頁「已經存在」（代表當天之前有人報名過）時才讀取資料
-      // 如果分頁不存在，代表當前該場次還沒有人報名，保持記憶體為空即可，不自動建表
       if (sheet) {
         const rows = await sheet.getRows();
 
@@ -456,6 +463,7 @@ async function reloadFromSheet() {
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
 app.get('/api/sessions', async (req, res) => {
+  checkAndResetExpiredSessions(); // 💡 每次使用者進入或刷新時先檢測跨週重置
   const now = getTaipeiNow();
   const userEmail = (req.query.userEmail || '').trim().toLowerCase();
 
@@ -466,7 +474,7 @@ app.get('/api/sessions', async (req, res) => {
   }
 
   let result = sessions.map(s => {
-    const dateStr = getSessionTargetDate(s.day);
+    const dateStr = getSessionTargetDate(s.id);
     const [yyyy, mm, dd] = dateStr.split('-');
     const displayDate = `${parseInt(mm)}/${parseInt(dd)}`;
     
@@ -480,8 +488,7 @@ app.get('/api/sessions', async (req, res) => {
 
     let isAfterOpen = isUserMember ? (now >= memberOpenTime) : (now >= nonMemberOpenTime);
     let isBeforeClose = now < closeTime;
-    let isOpen = isAfterOpen && isBeforeClose
-    // let isOpen = true
+    let isOpen = isAfterOpen && isBeforeClose;
 
     let openTimeNotice = "";
     let openTimeNoticeEn = "";
@@ -531,6 +538,7 @@ app.get('/api/sessions', async (req, res) => {
 });
 
 app.post('/api/grab', grabLimiter, async (req, res) => {
+  checkAndResetExpiredSessions();
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
   }
@@ -540,7 +548,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
   if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
 
   const now = getTaipeiNow();
-  const dateStr = getSessionTargetDate(targetSession.day);
+  const dateStr = getSessionTargetDate(targetSession.id);
   const closeTime = new Date(`${dateStr}T18:00:00+08:00`);
 
   if (now >= closeTime) {
@@ -650,6 +658,7 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
 });
 
 app.post('/api/cancel', grabLimiter, async (req, res) => {
+  checkAndResetExpiredSessions();
   if (!isSystemActive) {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
   }
