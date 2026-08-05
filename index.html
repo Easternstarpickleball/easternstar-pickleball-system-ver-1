@@ -795,19 +795,31 @@
     }
 
     function logout() {
-      // 1. 清除前端儲存的權限 token 與會員狀態
+      // 1. 💡 關鍵修復：如果背景正在執行 Google One Tap / 自動登入，立刻強制取消，避免競態衝突
+      if (window.google && google.accounts && google.accounts.id) {
+        try {
+          google.accounts.id.cancel();
+        } catch (e) {
+          console.log("Cancel prompt state:", e);
+        }
+      }
+
+      // 2. 清除前端儲存的權限 token 與會員狀態
       clearAuthStorage();
 
-      // 2. 切換介面顯示為「未登入」狀態
+      // 3. 重置 Google 初始化狀態 flag，讓狀態回到最乾淨的初始點
+      isGoogleInitialized = false;
+
+      // 4. 切換介面顯示為「未登入」狀態
       document.getElementById('user-profile').style.display = 'none';
       document.getElementById('auth-box').style.display = 'block';
       updateNameInputVisibility();
 
-      // 3. 清空當前選擇場次並重新載入場次狀態
+      // 5. 清空當前選擇場次並重新載入場次狀態
       selectedSession = null;
       loadSessions();
 
-      // 4. 重新渲染 Google 登入按鈕（不呼叫 disableAutoSelect）
+      // 6. 重新渲染 Google 登入按鈕
       if (window.google && google.accounts && google.accounts.id) {
         const signinBtnContainer = document.getElementById('google-signin-btn-container');
         if (signinBtnContainer) {
