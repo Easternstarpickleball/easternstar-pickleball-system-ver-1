@@ -894,9 +894,10 @@
           btn.dataset.id = s.id;
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
-          
-          // 💡 未開放場次設為 disabled（會自動呈灰底且不可點選）
-          if (!s.isOpen) {
+          const isFutureSession = s.dateStr > todayStr;
+
+          // 💡 關鍵修改：只鎖「未開放 且 為未來場次」；過去或開放中則不鎖住按鈕
+          if (!s.isOpen && isFutureSession) {
             btn.disabled = true;
           } else {
             btn.disabled = false;
