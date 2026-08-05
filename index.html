@@ -415,8 +415,7 @@
       <div id="auth-box" style="margin-bottom: 20px;">
         <p style="color: var(--text-main); font-size: 16px; font-weight: 600;" data-i18n="googleAuthHint">請先驗證 Google 帳號：</p>
         <div id="g_id_onload"></div>
-            
-        <div class="g_id_signin" data-type="standard"></div>
+        <div id="google-signin-btn-container"></div>
       </div>
 
       <div id="user-profile" class="user-info" style="display: none;">
@@ -500,6 +499,10 @@
     
     let isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
     let currentLang = localStorage.getItem('app_lang') || 'zh';
+
+    // 💡 控制鎖與 Google Client ID 全域變數
+    let isGoogleInitialized = false;
+    const GOOGLE_CLIENT_ID = "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com";
 
     function checkRefreshCooldown() {
       const LAST_REFRESH_KEY = 'pickleball_last_refresh';
@@ -709,10 +712,6 @@
       }
     }
 
-    // 💡 1. 在 <script> 頂部宣告控制鎖變數
-    let isGoogleInitialized = false;
-
-    // 💡 2. 替換整段 window.onload
     window.onload = function() {
       if (localStorage.getItem('app_theme') === 'dark') {
         document.body.classList.add('dark-mode');
@@ -739,33 +738,33 @@
         }
       } else {
         loadSessions();
-        // 💡 只有在本地無 Token 時才嘗試背景靜默登入
         tryInitGoogleOneTap();
       }
     };
 
-    // 💡 3. 新增/替換 tryInitGoogleOneTap 函式
     function tryInitGoogleOneTap() {
       if (window.google && google.accounts && google.accounts.id) {
-        // 保證全域僅初始化一次，消滅 initialize called multiple times 錯誤
         if (!isGoogleInitialized) {
           google.accounts.id.initialize({
-            client_id: "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com",
+            client_id: GOOGLE_CLIENT_ID,
             callback: handleCredentialResponse,
             auto_select: true,
-            use_fedcm_for_prompt: false // 關閉容易拋出 NetworkError 的 FedCM 機制
+            use_fedcm_for_prompt: false
           });
 
-          // 重新繪製標準登入按鈕
-          const signinBtn = document.querySelector('.g_id_signin');
-          if (signinBtn) {
-            google.accounts.id.renderButton(signinBtn, { theme: "outline", size: "large" });
+          const signinBtnContainer = document.getElementById('google-signin-btn-container');
+          if (signinBtnContainer) {
+            signinBtnContainer.innerHTML = '';
+            google.accounts.id.renderButton(signinBtnContainer, { 
+              theme: "outline", 
+              size: "large",
+              width: "250"
+            });
           }
 
           isGoogleInitialized = true;
         }
 
-        // 觸發 One Tap 背景靜默續航
         google.accounts.id.prompt((notification) => {
           if (notification.isNotDisplayed()) {
             console.log("⚠️ One Tap 未顯示原因：", notification.getNotDisplayedReason());
@@ -773,7 +772,6 @@
         });
 
       } else {
-        // SDK 尚未完成下載時，隔 100ms 自動重試
         setTimeout(tryInitGoogleOneTap, 100);
       }
     }
@@ -797,28 +795,28 @@
     }
 
     function logout() {
-      // 1. 清理本地儲存的憑證與狀態
       clearAuthStorage();
 
-      // 2. 停用 Google 自動登入機制（關鍵：防止登出後立刻又被自動登入）
       if (window.google && google.accounts && google.accounts.id) {
         google.accounts.id.disableAutoSelect();
       }
 
-      // 3. 切換 UI 視圖
       document.getElementById('user-profile').style.display = 'none';
       document.getElementById('auth-box').style.display = 'block';
       updateNameInputVisibility();
 
-      // 4. 重置選擇場次並重新載入（以訪客身份）
       selectedSession = null;
       loadSessions();
 
-      // 5. 確保登入按鈕有正常顯示（利用先前初始化好的 SDK 直接渲染）
       if (window.google && google.accounts && google.accounts.id) {
-        const signinBtn = document.querySelector('.g_id_signin');
-        if (signinBtn) {
-          google.accounts.id.renderButton(signinBtn, { theme: "outline", size: "large" });
+        const signinBtnContainer = document.getElementById('google-signin-btn-container');
+        if (signinBtnContainer) {
+          signinBtnContainer.innerHTML = '';
+          google.accounts.id.renderButton(signinBtnContainer, { 
+            theme: "outline", 
+            size: "large",
+            width: "250" 
+          });
         }
       }
     }
