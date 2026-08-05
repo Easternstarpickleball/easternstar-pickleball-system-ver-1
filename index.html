@@ -747,8 +747,8 @@
           google.accounts.id.initialize({
             client_id: GOOGLE_CLIENT_ID,
             callback: handleCredentialResponse,
-            auto_select: true,
-            use_fedcm_for_prompt: false
+            auto_select: true,             // 💡 自動選擇已登入帳號
+            use_fedcm_for_prompt: true     // 💡 支援 Google 最新安全規範
           });
 
           const signinBtnContainer = document.getElementById('google-signin-btn-container');
@@ -761,14 +761,15 @@
             });
           }
 
-          isGoogleInitialized = true;
-        }
+          // 💡 將 prompt 移到這裡面，確保「只會執行一次」
+          google.accounts.id.prompt((notification) => {
+            if (notification.isNotDisplayed()) {
+              console.log("⚠️ One Tap 未顯示原因：", notification.getNotDisplayedReason());
+            }
+          });
 
-        google.accounts.id.prompt((notification) => {
-          if (notification.isNotDisplayed()) {
-            console.log("⚠️ One Tap 未顯示原因：", notification.getNotDisplayedReason());
-          }
-        });
+          isGoogleInitialized = true; // 💡 標記為已初始化
+        }
 
       } else {
         setTimeout(tryInitGoogleOneTap, 100);
