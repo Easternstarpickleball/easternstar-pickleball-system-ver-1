@@ -495,6 +495,7 @@
     let userEmail = null;
     let currentLoadedSessions = []; 
     let countdownTimer = null; 
+    let tokenRefreshInterval = null; // 💡 背景 Token 刷新定時器
     
     let isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
     let currentLang = localStorage.getItem('app_lang') || 'zh';
@@ -669,28 +670,6 @@
       return `${year}-${month}-${day}`;
     }
 
-    function checkTokenExpiration() {
-      const savedToken = localStorage.getItem('pickleball_token');
-      if (!savedToken) {
-        clearAuthStorage();
-        return false;
-      }
-
-      try {
-        const payload = parseJwt(savedToken);
-        if (!payload || !payload.exp || payload.exp * 1000 <= Date.now() + 10000) {
-          clearAuthStorage();
-          alert(currentLang === 'en' ? "Login session expired. Please sign in with Google again." : "登入已過期，請重新驗證 Google 帳號！");
-          location.reload();
-          return false;
-        }
-        return true;
-      } catch (e) {
-        clearAuthStorage();
-        return false;
-      }
-    }
-
     function clearAuthStorage() {
       localStorage.removeItem('pickleball_token');
       localStorage.removeItem('pickleball_is_member');
@@ -712,36 +691,36 @@
     }
 
     window.onload = function() {
-  if (localStorage.getItem('app_theme') === 'dark') {
-    document.body.classList.add('dark-mode');
-  }
-
-  applyLanguage();
-
-  // 1. 先嘗試從 LocalStorage 恢復登入 UI (讓使用者一開頁面就看到自己已登入)
-  const savedToken = localStorage.getItem('pickleball_token');
-  if (savedToken) {
-    try {
-      const payload = parseJwt(savedToken);
-      if (payload && payload.email) {
-        userToken = savedToken;
-        userEmail = payload.email.trim().toLowerCase();
-        isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
-
-        showLoggedInState(payload.name, payload.email);
-        updateNameInputVisibility();
+      if (localStorage.getItem('app_theme') === 'dark') {
+        document.body.classList.add('dark-mode');
       }
-    } catch (e) {
-      clearAuthStorage();
-    }
-  }
 
-  // 2. 載入場次資料
-  loadSessions();
+      applyLanguage();
 
-  // 3. 啟動 Google One Tap（auto_select 會在背景自動核發最新 Token，順便更新過期的 Token）
-  tryInitGoogleOneTap();
-};
+      // 1. 從 LocalStorage 恢復登入狀態 (不主動檢查過期)
+      const savedToken = localStorage.getItem('pickleball_token');
+      if (savedToken) {
+        try {
+          const payload = parseJwt(savedToken);
+          if (payload && payload.email) {
+            userToken = savedToken;
+            userEmail = payload.email.trim().toLowerCase();
+            isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
+
+            showLoggedInState(payload.name, payload.email);
+            updateNameInputVisibility();
+          }
+        } catch (e) {
+          clearAuthStorage();
+        }
+      }
+
+      // 2. 載入場次資料
+      loadSessions();
+
+      // 3. 啟動 Google One Tap（背景自動靜默刷新與換發 Token）
+      tryInitGoogleOneTap();
+    };
 
     function tryInitGoogleOneTap() {
       if (window.google && google.accounts && google.accounts.id) {
@@ -749,8 +728,8 @@
           google.accounts.id.initialize({
             client_id: GOOGLE_CLIENT_ID,
             callback: handleCredentialResponse,
-            auto_select: true,             // 💡 自動選擇已登入帳號
-            use_fedcm_for_prompt: true     // 💡 支援 Google 最新安全規範
+            auto_select: true,             // 💡 自動靜默登入
+            use_fedcm_for_prompt: true
           });
 
           const signinBtnContainer = document.getElementById('google-signin-btn-container');
@@ -763,30 +742,45 @@
             });
           }
 
-          // 💡 將 prompt 移到這裡面，確保「只會執行一次」
+          // 💡 啟動背景自動續期（每 45 分鐘自動刷新 Token）
+          startTokenAutoRefresh();
+
           google.accounts.id.prompt((notification) => {
             if (notification.isNotDisplayed()) {
               console.log("⚠️ One Tap 未顯示原因：", notification.getNotDisplayedReason());
             }
           });
 
-          isGoogleInitialized = true; // 💡 標記為已初始化
+          isGoogleInitialized = true;
         }
-
       } else {
         setTimeout(tryInitGoogleOneTap, 100);
       }
+    }
+
+    // 💡 定時每 45 分鐘觸發一次靜默續期
+    function startTokenAutoRefresh() {
+      if (tokenRefreshInterval) clearInterval(tokenRefreshInterval);
+      
+      tokenRefreshInterval = setInterval(() => {
+        if (userToken && window.google && google.accounts && google.accounts.id) {
+          console.log("🔄 正在背景自動續期 Google Token...");
+          google.accounts.id.prompt();
+        }
+      }, 45 * 60 * 1000);
     }
 
     function handleCredentialResponse(response) {
       userToken = response.credential;
       localStorage.setItem('pickleball_token', userToken);
       const responsePayload = parseJwt(userToken);
-      userEmail = responsePayload.email.trim().toLowerCase();
-      showLoggedInState(responsePayload.name, responsePayload.email);
-      
-      updateNameInputVisibility();
-      loadSessions();
+      if (responsePayload && responsePayload.email) {
+        userEmail = responsePayload.email.trim().toLowerCase();
+        showLoggedInState(responsePayload.name, responsePayload.email);
+        
+        updateNameInputVisibility();
+        loadSessions();
+      }
     }
 
     function showLoggedInState(name, email) {
@@ -797,7 +791,7 @@
     }
 
     function logout() {
-      // 1. 💡 關鍵修復：如果背景正在執行 Google One Tap / 自動登入，立刻強制取消，避免競態衝突
+      // 1. 強制取消 Google 背景正在進行的 One Tap / 靜默驗證請求（解決 GeneralOAuthFlow 錯誤）
       if (window.google && google.accounts && google.accounts.id) {
         try {
           google.accounts.id.cancel();
@@ -806,10 +800,14 @@
         }
       }
 
-      // 2. 清除前端儲存的權限 token 與會員狀態
-      clearAuthStorage();
+      // 2. 清除自動續期定時器
+      if (tokenRefreshInterval) {
+        clearInterval(tokenRefreshInterval);
+        tokenRefreshInterval = null;
+      }
 
-      // 3. 重置 Google 初始化狀態 flag，讓狀態回到最乾淨的初始點
+      // 3. 清除前端儲存的權限 token 與會員狀態
+      clearAuthStorage();
       isGoogleInitialized = false;
 
       // 4. 切換介面顯示為「未登入」狀態
@@ -1142,8 +1140,6 @@
     }
 
     async function startGrab() {
-      if (!checkTokenExpiration()) return;
-
       if (!selectedSession || !userToken) {
         alert(currentLang === 'en' ? "Please login with Google first!" : "請先登入 Google 帳號！");
         return;
@@ -1200,8 +1196,6 @@
     }
 
     async function startCancel() {
-      if (!checkTokenExpiration()) return;
-
       if (!selectedSession || !userToken) return;
 
       const now = new Date();
