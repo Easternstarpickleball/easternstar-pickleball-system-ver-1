@@ -415,8 +415,8 @@
       <div id="auth-box" style="margin-bottom: 20px;">
         <p style="color: var(--text-main); font-size: 16px; font-weight: 600;" data-i18n="googleAuthHint">請先驗證 Google 帳號：</p>
         <div id="g_id_onload"
-             data-client_id="329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com"
-             data-callback="handleCredentialResponse">
+             <!-- data-client_id="329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com" -->
+             <!-- data-callback="handleCredentialResponse"> --> -->
         </div>
         <div class="g_id_signin" data-type="standard"></div>
       </div>
@@ -711,6 +711,10 @@
       }
     }
 
+    // 💡 1. 在 <script> 頂部宣告控制鎖變數
+    let isGoogleInitialized = false;
+
+    // 💡 2. 替換整段 window.onload
     window.onload = function() {
       if (localStorage.getItem('app_theme') === 'dark') {
         document.body.classList.add('dark-mode');
@@ -733,21 +737,48 @@
         } catch (e) {
           clearAuthStorage();
           loadSessions();
+          tryInitGoogleOneTap();
         }
       } else {
-        // 💡 找不到本地有效 Token 時，先載入未登入場次，並嘗試背景自動登入
         loadSessions();
+        // 💡 只有在本地無 Token 時才嘗試背景靜默登入
+        tryInitGoogleOneTap();
+      }
+    };
 
-        if (window.google && google.accounts && google.accounts.id) {
+    // 💡 3. 新增/替換 tryInitGoogleOneTap 函式
+    function tryInitGoogleOneTap() {
+      if (window.google && google.accounts && google.accounts.id) {
+        // 保證全域僅初始化一次，消滅 initialize called multiple times 錯誤
+        if (!isGoogleInitialized) {
           google.accounts.id.initialize({
             client_id: "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com",
             callback: handleCredentialResponse,
-            auto_select: true // 👈 關鍵：開啟自動選擇，讓登入過的使用者自動無感完成驗證
+            auto_select: true,
+            use_fedcm_for_prompt: false // 關閉容易拋出 NetworkError 的 FedCM 機制
           });
-          google.accounts.id.prompt(); // 觸發背景靜默驗證 / One Tap 提示
+
+          // 重新繪製標準登入按鈕
+          const signinBtn = document.querySelector('.g_id_signin');
+          if (signinBtn) {
+            google.accounts.id.renderButton(signinBtn, { theme: "outline", size: "large" });
+          }
+
+          isGoogleInitialized = true;
         }
+
+        // 觸發 One Tap 背景靜默續航
+        google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed()) {
+            console.log("⚠️ One Tap 未顯示原因：", notification.getNotDisplayedReason());
+          }
+        });
+
+      } else {
+        // SDK 尚未完成下載時，隔 100ms 自動重試
+        setTimeout(tryInitGoogleOneTap, 100);
       }
-    };
+    }
 
     function handleCredentialResponse(response) {
       userToken = response.credential;
