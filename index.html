@@ -735,7 +735,17 @@
           loadSessions();
         }
       } else {
+        // 💡 找不到本地有效 Token 時，先載入未登入場次，並嘗試背景自動登入
         loadSessions();
+
+        if (window.google && google.accounts && google.accounts.id) {
+          google.accounts.id.initialize({
+            client_id: "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com",
+            callback: handleCredentialResponse,
+            auto_select: true // 👈 關鍵：開啟自動選擇，讓登入過的使用者自動無感完成驗證
+          });
+          google.accounts.id.prompt(); // 觸發背景靜默驗證 / One Tap 提示
+        }
       }
     };
 

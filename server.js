@@ -21,6 +21,41 @@ const SIGNUP_SPREADSHEET_ID = process.env.SIGNUP_SPREADSHEET_ID;
 
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
+// 💡 【新增】高併發 Token 記憶體快取 (免去高併發時昂貴的 Google 解密 CPU 運算)
+const tokenCache = new Map();
+
+async function getEmailFromTokenFast(token) {
+  if (!token) return null;
+  const now = Math.floor(Date.now() / 1000);
+
+  // 1. 記憶體 O(1) 快速查找
+  if (tokenCache.has(token)) {
+    const cached = tokenCache.get(token);
+    if (cached.exp > now + 30) {
+      return cached.email; // 近乎 0 毫秒直接回傳
+    } else {
+      tokenCache.delete(token);
+    }
+  }
+
+  // 2. 快取沒有，才呼叫 Google 官方驗證
+  const ticket = await googleClient.verifyIdToken({
+    idToken: token,
+    audience: GOOGLE_CLIENT_ID
+  });
+  const payload = ticket.getPayload();
+  const email = payload.email.trim().toLowerCase();
+
+  // 3. 寫入快取 (保存約 10 分鐘)
+  tokenCache.set(token, {
+    email: email,
+    exp: payload.exp || (now + 600)
+  });
+
+  if (tokenCache.size > 500) tokenCache.clear();
+  return email;
+}
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '/')));
 
@@ -309,7 +344,7 @@ function triggerSheetSync(sessionId) {
     delete syncDebounceTimers[sessionId];
     pendingSyncSessions.add(sessionId);
     await safeProcessSheetSyncQueue();
-  }, 15 * 1000);
+  }, 2 * 1000);
 }
 
 async function safeProcessSheetSyncQueue() {
@@ -568,10 +603,10 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
       return res.status(400).json({ success: false, message: "❌ 缺少登入憑證 Token！請重新整理頁面登入。" });
     }
 
+    // ✅ 替換後（快取版）：
     try {
-      const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
-      const payload = ticket.getPayload();
-      userEmail = payload.email.trim().toLowerCase();
+      // 💡 直接使用 getEmailFromTokenFast，內部已包含驗證與 .trim().toLowerCase()
+      userEmail = await getEmailFromTokenFast(token);
       memberInfo = checkMemberStatus(userEmail);
     } catch (authErr) {
       console.error("❌ Token 解析失敗：", authErr.message);
@@ -667,9 +702,10 @@ app.post('/api/cancel', grabLimiter, async (req, res) => {
   if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
 
   let userEmail = '';
+  // ✅ 替換後（快取版）：
   try {
-    const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
-    userEmail = ticket.getPayload().email;
+    // 💡 同樣替換為快取版
+    userEmail = await getEmailFromTokenFast(token);
   } catch (authErr) {
     return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效！" });
   }
