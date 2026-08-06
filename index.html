@@ -1423,7 +1423,7 @@
       if (!document.hidden && userToken) {
         const now = Date.now();
         const timePassedMs = now - pageLoadedTime;
-        const FIFTY_MINUTES_MS = 10 * 1000; // 50 分鐘
+        const FIFTY_MINUTES_MS = 50 * 60 * 1000; // 50 分鐘
 
         // 2. 只有當網頁放置超過 50 分鐘時，切回來才會自動重新載入
         if (timePassedMs > FIFTY_MINUTES_MS) {
