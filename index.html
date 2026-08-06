@@ -809,6 +809,14 @@
         loadSessions();
       }
     }
+    // 檢查 Token 是否已經過期（或即將在 60 秒內過期）
+    function isTokenExpired(token) {
+      if (!token) return true;
+      const payload = parseJwt(token);
+      if (!payload || !payload.exp) return true;
+      const nowInSeconds = Math.floor(Date.now() / 1000);
+      return payload.exp <= (nowInSeconds + 60); // 預留 60 秒緩衝
+    }
 
     function showLoggedInState(name, email) {
       document.getElementById('auth-box').style.display = 'none';
@@ -1171,7 +1179,11 @@
         alert(currentLang === 'en' ? "Please login with Google first!" : "請先登入 Google 帳號！");
         return;
       }
-
+      if (isTokenExpired(userToken)) {
+        alert(currentLang === 'en' ? "Login session expired, refreshing..." : "登入已過期，正在為您重新載入頁面...");
+        window.location.reload();
+        return;
+      }
       const now = new Date();
       const todayStr = getTodayDateStr();
       if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
@@ -1224,7 +1236,11 @@
 
     async function startCancel() {
       if (!selectedSession || !userToken) return;
-
+      if (isTokenExpired(userToken)) {
+        alert(currentLang === 'en' ? "Login session expired, refreshing..." : "登入已過期，正在為您重新載入頁面...");
+        window.location.reload();
+        return;
+      }
       const now = new Date();
       const todayStr = getTodayDateStr();
       if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
