@@ -495,14 +495,13 @@
     let userEmail = null;
     let currentLoadedSessions = []; 
     let countdownTimer = null; 
-    let tokenRefreshInterval = null;
+    let tokenExpiryTimer = null; // 💡 Token 精準過期計時器
     
     let isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
     let currentLang = localStorage.getItem('app_lang') || 'zh';
 
     let isGoogleInitialized = false;
     const GOOGLE_CLIENT_ID = "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com";
-    let pageLoadedTime = Date.now();
 
     // 💡 工具函式：解密 JWT Payload
     function parseJwt(token) {
@@ -516,31 +515,36 @@
       } catch (e) { return null; }
     }
 
-    // 💡 工具函式：本地驗證 Token 是否已過期 (預留 60 秒緩衝時間)
+    // 💡 工具函式：本地驗證 Token 是否已過期 (預留 30 秒緩衝時間)
     function isTokenExpired(token) {
       if (!token) return true;
       const payload = parseJwt(token);
       if (!payload || !payload.exp) return true;
       const nowInSeconds = Math.floor(Date.now() / 1000);
-      return payload.exp <= (nowInSeconds + 60);
+      return payload.exp <= (nowInSeconds + 30);
     }
 
-    // 💡 修正版：靜默續期，直接呼叫 prompt()，避開重複 initialize() 引起的報錯與無限循環
-    function trySilentRefresh() {
-      if (!userToken || !window.google || !google.accounts || !google.accounts.id) return;
+    // 💡 新增：啟動 Token 到期倒數計時器
+    function startTokenExpiryTimer(token) {
+      if (tokenExpiryTimer) clearTimeout(tokenExpiryTimer);
 
-      console.log("🔄 正在嘗試靜默續期 Google Token...");
+      const payload = parseJwt(token);
+      if (!payload || !payload.exp) return;
 
-      try {
-        google.accounts.id.prompt((notification) => {
-          if (notification.isNotDisplayed()) {
-            console.log("ℹ️ 靜默續期未觸發，原因：", notification.getNotDisplayedReason());
-          } else if (notification.isSkippedMoment()) {
-            console.log("ℹ️ 使用者跳過或處於冷卻期，原因：", notification.getSkippedReason());
-          }
-        });
-      } catch (err) {
-        console.log("ℹ️ 靜默續期異常：", err);
+      const nowInSeconds = Math.floor(Date.now() / 1000);
+      const timeRemainingMs = (payload.exp - nowInSeconds - 30) * 1000;
+
+      if (timeRemainingMs > 0) {
+        console.log(`⏱️ Token 計時器已啟動，將於 ${Math.round(timeRemainingMs / 60000)} 分鐘後自動登出。`);
+        tokenExpiryTimer = setTimeout(() => {
+          alert(currentLang === 'en' 
+            ? "Your login session has expired (1 hour). Please verify again!" 
+            : "⏰ 登入憑證已滿 1 小時過期，請重新驗證登入以維持搶位功能！"
+          );
+          logout();
+        }, timeRemainingMs);
+      } else {
+        logout();
       }
     }
 
@@ -740,18 +744,23 @@
       // 1. 從 LocalStorage 恢復登入狀態
       const savedToken = localStorage.getItem('pickleball_token');
       if (savedToken) {
-        try {
-          const payload = parseJwt(savedToken);
-          if (payload && payload.email) {
-            userToken = savedToken;
-            userEmail = payload.email.trim().toLowerCase();
-            isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
-
-            showLoggedInState(payload.name, payload.email);
-            updateNameInputVisibility();
-          }
-        } catch (e) {
+        if (isTokenExpired(savedToken)) {
           clearAuthStorage();
+        } else {
+          try {
+            const payload = parseJwt(savedToken);
+            if (payload && payload.email) {
+              userToken = savedToken;
+              userEmail = payload.email.trim().toLowerCase();
+              isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
+
+              showLoggedInState(payload.name, payload.email);
+              updateNameInputVisibility();
+              startTokenExpiryTimer(savedToken); // 啟動剩餘時間計時
+            }
+          } catch (e) {
+            clearAuthStorage();
+          }
         }
       }
 
@@ -803,6 +812,7 @@
         
         updateNameInputVisibility();
         loadSessions();
+        startTokenExpiryTimer(userToken); // 登入成功時啟動計時器
       }
     }
 
@@ -822,9 +832,9 @@
         }
       }
 
-      if (tokenRefreshInterval) {
-        clearInterval(tokenRefreshInterval);
-        tokenRefreshInterval = null;
+      if (tokenExpiryTimer) {
+        clearTimeout(tokenExpiryTimer);
+        tokenExpiryTimer = null;
       }
 
       clearAuthStorage();
@@ -1151,11 +1161,10 @@
         return;
       }
 
-      // 💡 關鍵保險：按下按鈕時先檢查 Token 是否過期
+      // 💡 按下按鈕時進行 Token 過期安全攔截
       if (isTokenExpired(userToken)) {
-        alert(currentLang === 'en' ? "Login session expired! The page will reload." : "登入憑證已過期，系統將為您重新載入頁面！");
-        clearAuthStorage();
-        window.location.reload();
+        alert(currentLang === 'en' ? "Login session expired! Please verify again." : "登入憑證已過期，請重新驗證登入！");
+        logout();
         return;
       }
 
@@ -1212,11 +1221,10 @@
     async function startCancel() {
       if (!selectedSession || !userToken) return;
 
-      // 💡 關鍵保險：按下按鈕時先檢查 Token 是否過期
+      // 💡 按下按鈕時進行 Token 過期安全攔截
       if (isTokenExpired(userToken)) {
-        alert(currentLang === 'en' ? "Login session expired! The page will reload." : "登入憑證已過期，系統將為您重新載入頁面！");
-        clearAuthStorage();
-        window.location.reload();
+        alert(currentLang === 'en' ? "Login session expired! Please verify again." : "登入憑證已過期，請重新驗證登入！");
+        logout();
         return;
       }
 
@@ -1411,14 +1419,12 @@
       }
     }
 
-    // 💡 修正版：切回分頁時只在「Token 確實過期」時嘗試靜默續期
+    // 💡 切回分頁時：若檢查發現已過期，自動登出並恢復介面
     document.addEventListener('visibilitychange', function() {
       if (!document.hidden && userToken) {
         if (isTokenExpired(userToken)) {
-          console.log("⏰ 偵測到 Token 已過期，嘗試靜默續期...");
-          pageLoadedTime = Date.now();
-          clearAuthStorage();
-          trySilentRefresh();
+          console.log("⏰ 切回分頁偵測到 Token 已過期，執行自動登出...");
+          logout();
         }
       }
     });
