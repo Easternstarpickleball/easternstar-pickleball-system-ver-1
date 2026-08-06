@@ -1415,6 +1415,28 @@
         alert("❌ 無效選項，請輸入 1 或 2！");
       }
     }
+    
+    let pageLoadedTime = Date.now();
+
+    document.addEventListener('visibilitychange', function() {
+      // 1. 只有當使用者切換回這個分頁，且目前有登入 Token 時才處理
+      if (!document.hidden && userToken) {
+        const now = Date.now();
+        const timePassedMs = now - pageLoadedTime;
+        const FIFTY_MINUTES_MS = 50 * 60 * 1000; // 50 分鐘
+
+        // 2. 只有當網頁放置超過 50 分鐘時，切回來才會自動重新載入
+        if (timePassedMs > FIFTY_MINUTES_MS) {
+          console.log("⏰ 網頁已放置超過 50 分鐘，自動無感重新整理以維護登入狀態...");
+          
+          // 更新載入時間，防止重複觸發
+          pageLoadedTime = Date.now();
+          
+          // 原生網頁重新整理（因為 auto_select: true，載入後 0.5 秒內自動補滿 Token 血量）
+          window.location.reload();
+        }
+      }
+    });
   </script>
 </body>
 </html>
