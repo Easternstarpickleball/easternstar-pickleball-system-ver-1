@@ -760,34 +760,53 @@
     }
 
     // 在 startTokenAutoRefresh 裡（45分鐘背景執行時）
+    // 💡 修正後：背景靜默續期（徹底解決 FedCM NetworkError 報錯問題）
     function startTokenAutoRefresh() {
       if (tokenRefreshInterval) clearInterval(tokenRefreshInterval);
       
+      // 1. 每 45 分鐘觸發一次
       tokenRefreshInterval = setInterval(() => {
-        if (userToken && window.google && google.accounts && google.accounts.id && !document.hidden) {
-          console.log("🔄 正在背景自動續期 Google Token...");
-          
-          try {
-            // 💡 背景靜默續期時將 use_fedcm_for_prompt 設為 false
-            // 這樣就不會觸發 Chrome FedCM 的背景騷擾攔截機制
-            google.accounts.id.initialize({
-              client_id: GOOGLE_CLIENT_ID,
-              callback: handleCredentialResponse,
-              auto_select: true,
-              use_fedcm_for_prompt: false
-            });
+        refreshGoogleTokenSilent();
+      }, 45 * 60 * 1000);
 
-            google.accounts.id.prompt((notification) => {
-              if (notification.isNotDisplayed()) {
-                console.log("ℹ️ 背景續期狀態：", notification.getNotDisplayedReason());
-              }
-            });
-          } catch (err) {
-            console.log("ℹ️ 背景續期跳過：", err);
-          }
-        }
-      }, 10 * 1000);
+      // 2. 當使用者切換分頁回來時，如果 Token 已經快過期，順便靜默檢查
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
     }
+
+    function handleVisibilityChange() {
+      if (!document.hidden && userToken) {
+        // 使用者切換回此分頁時自動嘗試續期
+        refreshGoogleTokenSilent();
+      }
+    }
+
+    function refreshGoogleTokenSilent() {
+      if (!userToken || !window.google || !google.accounts || !google.accounts.id) return;
+
+      console.log("🔄 正在嘗試背景靜默續期 Google Token...");
+
+      try {
+        // 背景續期時：強制關閉 FedCM，避開 Chrome 背景安全封鎖
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleCredentialResponse,
+          auto_select: true,
+          use_fedcm_for_prompt: false // 💡 關鍵：背景時必須為 false，才不會跳 NetworkError
+        });
+
+        // 呼叫 prompt 時傳入 callback 捕獲錯誤，防止控制台爆出未捕獲的例外
+        google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed()) {
+            // 被瀏覽器阻擋是正常的（例如未互動或冷卻中），安靜記錄即可，不影響使用者
+            console.log("ℹ️ 背景靜默續期狀態：", notification.getNotDisplayedReason());
+          }
+        });
+      } catch (err) {
+        console.log("ℹ️ 靜默續期跳過：", err);
+      }
+    }
+    
     function handleCredentialResponse(response) {
       userToken = response.credential;
       localStorage.setItem('pickleball_token', userToken);
