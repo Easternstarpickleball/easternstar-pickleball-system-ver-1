@@ -1154,6 +1154,7 @@
       // 💡 關鍵保險：按下按鈕時先檢查 Token 是否過期
       if (isTokenExpired(userToken)) {
         alert(currentLang === 'en' ? "Login session expired! The page will reload." : "登入憑證已過期，系統將為您重新載入頁面！");
+        clearAuthStorage();
         window.location.reload();
         return;
       }
@@ -1214,6 +1215,7 @@
       // 💡 關鍵保險：按下按鈕時先檢查 Token 是否過期
       if (isTokenExpired(userToken)) {
         alert(currentLang === 'en' ? "Login session expired! The page will reload." : "登入憑證已過期，系統將為您重新載入頁面！");
+        clearAuthStorage();
         window.location.reload();
         return;
       }
@@ -1415,6 +1417,7 @@
         if (isTokenExpired(userToken)) {
           console.log("⏰ 偵測到 Token 已過期，嘗試靜默續期...");
           pageLoadedTime = Date.now();
+          clearAuthStorage();
           trySilentRefresh();
         }
       }
