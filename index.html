@@ -777,23 +777,22 @@
       console.log("🔄 正在嘗試背景靜默續期 Google Token...");
 
       try {
-        // 背景續期時：強制關閉 FedCM，避開 Chrome 背景安全封鎖
+        // 重新初始化並嘗試背景續期
         google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: handleCredentialResponse,
-          auto_select: true,
-          use_fedcm_for_prompt: false // 💡 關鍵：背景時必須為 false，才不會跳 NetworkError
+          auto_select: true
         });
 
-        // 呼叫 prompt 時傳入 callback 捕獲錯誤，防止控制台爆出未捕獲的例外
         google.accounts.id.prompt((notification) => {
           if (notification.isNotDisplayed()) {
-            // 被瀏覽器阻擋是正常的（例如未互動或冷卻中），安靜記錄即可，不影響使用者
-            console.log("ℹ️ 背景靜默續期狀態：", notification.getNotDisplayedReason());
+            console.log("ℹ️ 背景靜默續期未觸發，原因：", notification.getNotDisplayedReason());
+          } else if (notification.isSkippedMoment()) {
+            console.log("ℹ️ 使用者跳過或處於冷卻期，原因：", notification.getSkippedReason());
           }
         });
       } catch (err) {
-        console.log("ℹ️ 靜默續期跳過：", err);
+        console.log("ℹ️ 靜默續期異常：", err);
       }
     }
 
@@ -1447,9 +1446,9 @@
            
           // 更新載入時間，防止重複觸發
           pageLoadedTime = Date.now();
-          
+          refreshGoogleTokenSilent();
           // 原生網頁重新整理（因為 auto_select: true，載入後 0.5 秒內自動補滿 Token 血量）
-          window.location.reload();
+          // window.location.reload();
         }
       }
     });
