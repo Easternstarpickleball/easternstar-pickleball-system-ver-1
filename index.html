@@ -759,15 +759,30 @@
     }
 
     // 💡 定時每 45 分鐘觸發一次靜默續期
+    // 💡 精準修正：讓 SDK 在背景靜默重新初始化並觸發自動選取續期
     function startTokenAutoRefresh() {
       if (tokenRefreshInterval) clearInterval(tokenRefreshInterval);
       
       tokenRefreshInterval = setInterval(() => {
         if (userToken && window.google && google.accounts && google.accounts.id) {
           console.log("🔄 正在背景自動續期 Google Token...");
-          google.accounts.id.prompt();
+          
+          // 透過 re-initialize 配合 auto_select，Google SDK 會在背景靜默取得最新的 Credential Token
+          // 並自動再次呼叫 handleCredentialResponse(response)，更新 localStorage 與 userToken
+          google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleCredentialResponse,
+            auto_select: true
+          });
+
+          // 使用 notifyListener 靜默嘗試續期，而不去跳出 Prompt 彈窗
+          google.accounts.id.prompt((notification) => {
+            if (notification.isNotDisplayed()) {
+              console.log("靜默續期完成 (無需顯示彈窗)");
+            }
+          });
         }
-      }, 45 * 60 * 1000);
+      }, 45 * 60 * 1000); // 每 45 分鐘自動執行一次
     }
 
     function handleCredentialResponse(response) {
