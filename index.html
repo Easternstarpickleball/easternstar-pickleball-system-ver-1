@@ -725,12 +725,11 @@
     function tryInitGoogleOneTap() {
       if (window.google && google.accounts && google.accounts.id) {
         if (!isGoogleInitialized) {
-          // 在 tryInitGoogleOneTap 裡（第一次載入頁面時）
           google.accounts.id.initialize({
             client_id: GOOGLE_CLIENT_ID,
             callback: handleCredentialResponse,
-            auto_select: true,
-            use_fedcm_for_prompt: true // 💡 第一次載入時開著，讓一般登入順暢
+            auto_select: true,            // 網頁載入時無感自動登入
+            use_fedcm_for_prompt: true
           });
 
           const signinBtnContainer = document.getElementById('google-signin-btn-container');
@@ -743,14 +742,10 @@
             });
           }
 
-          // 💡 啟動背景自動續期（每 45 分鐘自動刷新 Token）
-          startTokenAutoRefresh();
-
-          google.accounts.id.prompt((notification) => {
-            if (notification.isNotDisplayed()) {
-              console.log("⚠️ One Tap 未顯示原因：", notification.getNotDisplayedReason());
-            }
-          });
+          // 只有在完全沒登入時，才在載入時彈出一次提示
+          if (!userToken) {
+            google.accounts.id.prompt();
+          }
 
           isGoogleInitialized = true;
         }
@@ -762,16 +757,11 @@
     // 在 startTokenAutoRefresh 裡（45分鐘背景執行時）
     // 💡 修正後：背景靜默續期（徹底解決 FedCM NetworkError 報錯問題）
     function startTokenAutoRefresh() {
-      if (tokenRefreshInterval) clearInterval(tokenRefreshInterval);
-      
-      // 1. 每 45 分鐘觸發一次
-      tokenRefreshInterval = setInterval(() => {
-        refreshGoogleTokenSilent();
-      }, 45 * 60 * 1000);
-
-      // 2. 當使用者切換分頁回來時，如果 Token 已經快過期，順便靜默檢查
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.addEventListener('visibilitychange', handleVisibilityChange);
+      // 💡 直接清空定時器，不再背景硬撞 Google API
+      if (tokenRefreshInterval) {
+        clearInterval(tokenRefreshInterval);
+        tokenRefreshInterval = null;
+      }
     }
 
     function handleVisibilityChange() {
@@ -806,7 +796,7 @@
         console.log("ℹ️ 靜默續期跳過：", err);
       }
     }
-    
+
     function handleCredentialResponse(response) {
       userToken = response.credential;
       localStorage.setItem('pickleball_token', userToken);
