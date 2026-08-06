@@ -1415,7 +1415,7 @@
         alert("❌ 無效選項，請輸入 1 或 2！");
       }
     }
-    
+
     let pageLoadedTime = Date.now();
 
     document.addEventListener('visibilitychange', function() {
@@ -1423,12 +1423,12 @@
       if (!document.hidden && userToken) {
         const now = Date.now();
         const timePassedMs = now - pageLoadedTime;
-        const FIFTY_MINUTES_MS = 50 * 60 * 1000; // 50 分鐘
+        const FIFTY_MINUTES_MS = 10 * 1000; // 50 分鐘
 
         // 2. 只有當網頁放置超過 50 分鐘時，切回來才會自動重新載入
         if (timePassedMs > FIFTY_MINUTES_MS) {
           console.log("⏰ 網頁已放置超過 50 分鐘，自動無感重新整理以維護登入狀態...");
-          
+           
           // 更新載入時間，防止重複觸發
           pageLoadedTime = Date.now();
           
