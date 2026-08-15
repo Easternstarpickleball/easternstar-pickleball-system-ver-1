@@ -16,9 +16,6 @@ app.use((req, res, next) => {
 });
 
 const jwt = require('jsonwebtoken');
-// ... 下面保留你原本的程式碼 ...
-
-const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 
 app.use(cookieParser()); // 讓 Express 可以讀取 Cookie
