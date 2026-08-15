@@ -491,11 +491,9 @@
 
   <script>
     let selectedSession = null;
-    let userToken = null;
     let userEmail = null;
     let currentLoadedSessions = []; 
     let countdownTimer = null; 
-    let tokenExpiryTimer = null; // 💡 Token 精準過期計時器
     
     let isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
     let currentLang = localStorage.getItem('app_lang') || 'zh';
@@ -698,34 +696,11 @@
 
       applyLanguage();
 
-      // 1. 從 LocalStorage 恢復登入狀態
-      const savedToken = localStorage.getItem('pickleball_token');
-      if (savedToken) {
-        if (isTokenExpired(savedToken)) {
-          clearAuthStorage();
-        } else {
-          try {
-            const payload = parseJwt(savedToken);
-            if (payload && payload.email) {
-              userToken = savedToken;
-              userEmail = payload.email.trim().toLowerCase();
-              isCurrentUserMember = localStorage.getItem('pickleball_is_member') === 'true';
-
-              showLoggedInState(payload.name, payload.email);
-              updateNameInputVisibility();
-              startTokenExpiryTimer(savedToken); // 啟動剩餘時間計時
-            }
-          } catch (e) {
-            clearAuthStorage();
-          }
-        }
-      }
-
-      // 2. 載入場次資料
-      loadSessions();
-
-      // 3. 啟動 Google One Tap
-      tryInitGoogleOneTap();
+      // 💡 1. 移除從 localStorage 讀取舊 Token 的邏輯
+      // 💡 2. 先發送 API 讀取 Cookie 判斷身分，完成後再初始化 Google 按鈕
+      loadSessions().then(() => {
+        tryInitGoogleOneTap();
+      });
     };
 
     function tryInitGoogleOneTap() {
@@ -785,6 +760,21 @@
       const profileBox = document.getElementById('user-profile');
       profileBox.style.display = 'flex';
       document.getElementById('user-profile-text').innerText = `👤 ${name} (${email})`;
+    }
+    // 💡 新增：獨立繪製 Google 登入按鈕
+    function renderGoogleButton() {
+      const container = document.getElementById('google-signin-btn-container');
+      if (container && window.google && google.accounts && google.accounts.id) {
+        container.innerHTML = '';
+        google.accounts.id.renderButton(container, { theme: "outline", size: "large", width: "250" });
+      }
+    }
+
+    // 💡 新增：處理未登入狀態的 UI 顯示
+    function showLoggedOutState() {
+      document.getElementById('auth-box').style.display = 'block';
+      document.getElementById('user-profile').style.display = 'none';
+      renderGoogleButton();
     }
 
     async function logout() {

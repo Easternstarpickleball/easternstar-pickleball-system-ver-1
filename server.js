@@ -176,11 +176,18 @@ function getSessionTargetDate(sessionId) {
   return sessionDates[sessionId];
 }
 
+// 💡 工具函式：發送 7 天效期的 HttpOnly Cookie (增加環境相容性)
 function setAuthCookie(res, email) {
   const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '7d' });
+  
+  // 自動判斷是否在 Render 或生產環境 (HTTPS)
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER;
+
   res.cookie('pickleball_token', token, {
-    httpOnly: true, secure: true, sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 天
+    httpOnly: true,
+    secure: isProduction ? true : false, // Render 上開啟 HTTPS 加密，本機 localhost 測試時不強制
+    sameSite: 'lax',                    // 使用 lax 確保相容性與跨頁面傳輸穩定
+    maxAge: 7 * 24 * 60 * 60 * 1000     // 7 天 (毫秒)
   });
 }
 
