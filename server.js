@@ -8,6 +8,14 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+
+app.use(cookieParser()); // 讓 Express 可以讀取 Cookie
+
+// 設定你自製 JWT 的加密密鑰 (優先讀取環境變數，沒有的話用預設值)
+const JWT_SECRET = process.env.JWT_SECRET || 'pickleball_secret_key_2026';
+
 app.set('trust proxy', 1);
 app.use(cors());
 
@@ -166,6 +174,21 @@ function checkAndResetExpiredSessions() {
 function getSessionTargetDate(sessionId) {
   checkAndResetExpiredSessions();
   return sessionDates[sessionId];
+}
+
+function setAuthCookie(res, email) {
+  const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '7d' });
+  res.cookie('pickleball_token', token, {
+    httpOnly: true, secure: true, sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 天
+  });
+}
+
+function verifyAuthCookie(req) {
+  const token = req.cookies.pickleball_token;
+  if (!token) return null;
+  try { return jwt.verify(token, JWT_SECRET).email; } 
+  catch (err) { return null; }
 }
 
 async function getGoogleDoc(spreadsheetId) {
@@ -494,14 +517,25 @@ async function reloadFromSheet() {
     console.error('❌ 重載試算表失敗：', err.message);
   }
 }
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const userEmail = await getEmailFromTokenFast(req.body.token);
+    if (!userEmail) throw new Error("無效");
+    setAuthCookie(res, userEmail); // 成功就發 Cookie
+    res.json({ success: true });
+  } catch (err) { res.status(401).json({ success: false }); }
+});
 
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('pickleball_token');
+  res.json({ success: true });
+});
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
 app.get('/api/sessions', async (req, res) => {
   checkAndResetExpiredSessions(); // 💡 每次使用者進入或刷新時先檢測跨週重置
   const now = getTaipeiNow();
-  const userEmail = (req.query.userEmail || '').trim().toLowerCase();
-
+  const userEmail = verifyAuthCookie(req) || '';
   let isUserMember = false;
   if (userEmail) {
     const memberInfo = checkMemberStatus(userEmail);
@@ -548,10 +582,8 @@ app.get('/api/sessions', async (req, res) => {
     const isUserRegistered = userEmail ? registeredEmails[s.id]?.has(userEmail) : false;
 
     const sanitizedAttendees = (sessionAttendees[s.id] || []).map(a => ({
-      name: a.name,
-      email: maskEmail(a.email),
-      status: a.status,
-      isMember: a.isMember
+      isLoggedIn: !!userEmail, userEmail, userName, isMember: isUserMember, 
+      sessions: result
     }));
 
     return {
@@ -578,7 +610,8 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停報名！" });
   }
 
-  const { sessionId, token, customName } = req.body;
+  // 💡 1. 這裡拿掉 token，只需讀取 sessionId 與 customName
+  const { sessionId, customName } = req.body;
   const targetSession = sessions.find(s => s.id === sessionId);
   if (!targetSession) return res.status(400).json({ success: false, message: "❌ 找不到指定場次！" });
 
@@ -599,19 +632,12 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     userEmail = req.body.testEmail || `test_user_${Math.random()}@test.com`;
     memberInfo = { isMember: true, userName: customName || '壓測測試員' };
   } else {
-    if (!sessionId || !token) {
-      return res.status(400).json({ success: false, message: "❌ 缺少登入憑證 Token！請重新整理頁面登入。" });
-    }
-
-    // ✅ 替換後（快取版）：
-    try {
-      // 💡 直接使用 getEmailFromTokenFast，內部已包含驗證與 .trim().toLowerCase()
-      userEmail = await getEmailFromTokenFast(token);
-      memberInfo = checkMemberStatus(userEmail);
-    } catch (authErr) {
-      console.error("❌ Token 解析失敗：", authErr.message);
+    // 💡 2. 驗證機制改由讀取 HttpOnly Cookie
+    userEmail = verifyAuthCookie(req);
+    if (!userEmail) {
       return res.status(401).json({ success: false, message: "❌ 登入驗證過期，請重新整理頁面並重新登入 Google 帳號！" });
     }
+    memberInfo = checkMemberStatus(userEmail);
   }
 
   const cleanEmail = userEmail.trim().toLowerCase();
@@ -683,6 +709,11 @@ app.post('/api/grab', grabLimiter, async (req, res) => {
     isMember: a.isMember
   }));
 
+  // 💡 3. 【核心續命機制】只要不是壓測，報名成功就發一張全新的 7 天 Cookie
+  if (!isStressTest) {
+    setAuthCookie(res, cleanEmail);
+  }
+
   res.json({ 
     success: true, 
     message: resMessage,
@@ -698,16 +729,14 @@ app.post('/api/cancel', grabLimiter, async (req, res) => {
     return res.json({ success: false, message: "⚠️ 系統目前維護中，暫停取消報名！" });
   }
 
-  const { sessionId, token } = req.body;
-  if (!sessionId || !token) return res.status(400).json({ success: false, message: "❌ 缺少場次或驗證 Token！" });
+  // 💡 1. 拿掉 token，只需讀取 sessionId
+  const { sessionId } = req.body;
+  if (!sessionId) return res.status(400).json({ success: false, message: "❌ 缺少場次資訊！" });
 
-  let userEmail = '';
-  // ✅ 替換後（快取版）：
-  try {
-    // 💡 同樣替換為快取版
-    userEmail = await getEmailFromTokenFast(token);
-  } catch (authErr) {
-    return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效！" });
+  // 💡 2. 從 HttpOnly Cookie 驗證並取得 Email
+  const userEmail = verifyAuthCookie(req);
+  if (!userEmail) {
+    return res.status(401).json({ success: false, message: "❌ 帳號驗證已失效或過期，請重新登入！" });
   }
 
   const cleanEmail = userEmail.trim().toLowerCase();
@@ -731,6 +760,9 @@ app.post('/api/cancel', grabLimiter, async (req, res) => {
     isMember: a.isMember
   }));
 
+  // 💡 3. 取消報名也算是有活動，順手幫他續命 7 天 Cookie
+  setAuthCookie(res, cleanEmail);
+
   res.json({ 
     success: true, 
     message: `🗑️ 已成功取消報名！系統已自動更新名次遞補。`,
@@ -738,15 +770,6 @@ app.post('/api/cancel', grabLimiter, async (req, res) => {
     waitlistCount: waitlistCache[sessionId],
     attendees: sanitizedAttendees
   });
-});
-
-app.post('/api/admin/toggle-pause', async (req, res) => {
-  const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== ADMIN_SECRET) return res.status(403).json({ success: false, message: "❌ 暗號錯誤！" });
-
-  isSystemActive = !isSystemActive;
-  const statusStr = isSystemActive ? "🟢 系統已恢復開放" : "🔴 系統已暫停（維護中）";
-  res.json({ success: true, message: `操作成功！目前狀態：${statusStr}` });
 });
 
 app.post('/api/admin/add-user', async (req, res) => {

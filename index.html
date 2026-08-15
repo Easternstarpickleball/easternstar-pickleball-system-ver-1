@@ -504,49 +504,6 @@
     const GOOGLE_CLIENT_ID = "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com";
 
     // 💡 工具函式：解密 JWT Payload
-    function parseJwt(token) {
-      try {
-        var base64Url = token.split('.')[1];
-        var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        var jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join(''));
-        return JSON.parse(jsonPayload);
-      } catch (e) { return null; }
-    }
-
-    // 💡 工具函式：本地驗證 Token 是否已過期 (預留 30 秒緩衝時間)
-    function isTokenExpired(token) {
-      if (!token) return true;
-      const payload = parseJwt(token);
-      if (!payload || !payload.exp) return true;
-      const nowInSeconds = Math.floor(Date.now() / 1000);
-      return payload.exp <= (nowInSeconds + 30);
-    }
-
-    // 💡 新增：啟動 Token 到期倒數計時器
-    function startTokenExpiryTimer(token) {
-      if (tokenExpiryTimer) clearTimeout(tokenExpiryTimer);
-
-      const payload = parseJwt(token);
-      if (!payload || !payload.exp) return;
-
-      const nowInSeconds = Math.floor(Date.now() / 1000);
-      const timeRemainingMs = (payload.exp - nowInSeconds - 30) * 1000;
-
-      if (timeRemainingMs > 0) {
-        console.log(`⏱️ Token 計時器已啟動，將於 ${Math.round(timeRemainingMs / 60000)} 分鐘後自動登出。`);
-        tokenExpiryTimer = setTimeout(() => {
-          alert(currentLang === 'en' 
-            ? "Your login session has expired (1 hour). Please verify again!" 
-            : "⏰ 登入憑證已滿 1 小時過期，請重新驗證登入以維持搶位功能！"
-          );
-          logout();
-        }, timeRemainingMs);
-      } else {
-        logout();
-      }
-    }
 
     function checkRefreshCooldown() {
       const LAST_REFRESH_KEY = 'pickleball_last_refresh';
@@ -802,17 +759,24 @@
       }
     }
 
-    function handleCredentialResponse(response) {
-      userToken = response.credential;
-      localStorage.setItem('pickleball_token', userToken);
-      const responsePayload = parseJwt(userToken);
-      if (responsePayload && responsePayload.email) {
-        userEmail = responsePayload.email.trim().toLowerCase();
-        showLoggedInState(responsePayload.name, responsePayload.email);
+    async function handleCredentialResponse(response) {
+      try {
+        // 將 Google 憑證送給後端換取 7 天 HttpOnly Cookie
+        const res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: response.credential })
+        });
         
-        updateNameInputVisibility();
-        loadSessions();
-        startTokenExpiryTimer(userToken); // 登入成功時啟動計時器
+        const data = await res.json();
+        if (data.success) {
+          // Cookie 設置成功，重新載入場次 (後端會辨識身分)
+          await loadSessions();
+        } else {
+          alert("登入驗證失敗！");
+        }
+      } catch (err) {
+        alert("網路連線錯誤，請重試！");
       }
     }
 
@@ -823,39 +787,29 @@
       document.getElementById('user-profile-text').innerText = `👤 ${name} (${email})`;
     }
 
-    function logout() {
+    async function logout() {
       if (window.google && google.accounts && google.accounts.id) {
-        try {
-          google.accounts.id.cancel();
-        } catch (e) {
-          console.log("Cancel prompt state:", e);
-        }
+        try { google.accounts.id.cancel(); } catch (e) {}
       }
 
-      if (tokenExpiryTimer) {
-        clearTimeout(tokenExpiryTimer);
-        tokenExpiryTimer = null;
-      }
-
-      clearAuthStorage();
-      isGoogleInitialized = false;
+      // 呼叫後端清除 Cookie
+      await fetch('/api/auth/logout', { method: 'POST' }); 
+      
+      userEmail = null;
+      isCurrentUserMember = false;
 
       document.getElementById('user-profile').style.display = 'none';
       document.getElementById('auth-box').style.display = 'block';
       updateNameInputVisibility();
 
       selectedSession = null;
-      loadSessions();
+      await loadSessions();
 
       if (window.google && google.accounts && google.accounts.id) {
         const signinBtnContainer = document.getElementById('google-signin-btn-container');
         if (signinBtnContainer) {
           signinBtnContainer.innerHTML = '';
-          google.accounts.id.renderButton(signinBtnContainer, { 
-            theme: "outline", 
-            size: "large",
-            width: "250" 
-          });
+          google.accounts.id.renderButton(signinBtnContainer, { theme: "outline", size: "large", width: "250" });
         }
       }
     }
@@ -1156,20 +1110,13 @@
     }
 
     async function startGrab() {
-      if (!selectedSession || !userToken) {
+      // 💡 改用 userEmail 判斷是否登入
+      if (!selectedSession || !userEmail) {
         alert(currentLang === 'en' ? "Please login with Google first!" : "請先登入 Google 帳號！");
         return;
       }
 
-      // 💡 按下按鈕時進行 Token 過期安全攔截
-      if (isTokenExpired(userToken)) {
-        alert(currentLang === 'en' ? "Login session expired! Please verify again." : "登入憑證已過期，請重新驗證登入！");
-        logout();
-        return;
-      }
-
-      const now = new Date();
-      const todayStr = getTodayDateStr();
+      const now = new Date(); const todayStr = getTodayDateStr();
       if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
         alert(currentLang === 'en' ? "Signups are closed after 18:00 on session day!" : "當天 18:00 後已截止報名！");
         return;
@@ -1193,43 +1140,33 @@
         const res = await fetch('/api/grab', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: selectedSession.id,
-            token: userToken,
-            customName: customNameVal
-          })
+          // 💡 拿掉 token 傳遞
+          body: JSON.stringify({ sessionId: selectedSession.id, customName: customNameVal })
         });
+        
+        // 💡 如果攔截到 401 (Cookie過期)
+        if (res.status === 401) {
+          alert(currentLang === 'en' ? "Login session expired (7 days). Please verify again!" : "登入狀態已超過 7 天過期，請重新驗證登入！");
+          logout();
+          return;
+        }
 
         const result = await res.json();
         alert(result.message);
-
-        if (result.success && selectedSession) {
-          selectedSession.isUserRegistered = true;
-        }
-
+        if (result.success && selectedSession) selectedSession.isUserRegistered = true;
         await loadSessions();
 
       } catch (err) {
         alert('❌ 送出失敗，請確認網路連線。');
       } finally {
-        if (selectedSession) {
-          updateActionButtons(selectedSession);
-        }
+        if (selectedSession) updateActionButtons(selectedSession);
       }
     }
 
     async function startCancel() {
-      if (!selectedSession || !userToken) return;
+      if (!selectedSession || !userEmail) return;
 
-      // 💡 按下按鈕時進行 Token 過期安全攔截
-      if (isTokenExpired(userToken)) {
-        alert(currentLang === 'en' ? "Login session expired! Please verify again." : "登入憑證已過期，請重新驗證登入！");
-        logout();
-        return;
-      }
-
-      const now = new Date();
-      const todayStr = getTodayDateStr();
+      const now = new Date(); const todayStr = getTodayDateStr();
       if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
         alert(currentLang === 'en' ? "Cancellations are not allowed after 18:00 on session day!" : "當天 18:00 後已禁止取消報名！");
         return;
@@ -1245,27 +1182,25 @@
         const res = await fetch('/api/cancel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: selectedSession.id,
-            token: userToken
-          })
+          // 💡 拿掉 token 傳遞
+          body: JSON.stringify({ sessionId: selectedSession.id })
         });
+        
+        if (res.status === 401) {
+          alert(currentLang === 'en' ? "Login session expired. Please verify again!" : "登入狀態已過期，請重新驗證登入！");
+          logout();
+          return;
+        }
 
         const result = await res.json();
         alert(result.message);
-
-        if (result.success && selectedSession) {
-          selectedSession.isUserRegistered = false;
-        }
-
+        if (result.success && selectedSession) selectedSession.isUserRegistered = false;
         await loadSessions();
 
       } catch (err) {
         alert('❌ 取消失敗，請確認網路連線。');
       } finally {
-        if (selectedSession) {
-          updateActionButtons(selectedSession);
-        }
+        if (selectedSession) updateActionButtons(selectedSession);
       }
     }
     
