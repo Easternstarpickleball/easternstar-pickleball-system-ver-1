@@ -8,6 +8,16 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 💡 解決 Google 登入「Cross-Origin-Opener-Policy」被阻擋的通行證設定
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  next();
+});
+
+const jwt = require('jsonwebtoken');
+// ... 下面保留你原本的程式碼 ...
+
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 
