@@ -532,14 +532,22 @@ app.post('/api/auth/logout', (req, res) => {
 });
 app.get('/ping', (req, res) => res.status(200).send('PONG'));
 
+// 💡 取得場次與登入狀態 (全自動讀取 Cookie)
 app.get('/api/sessions', async (req, res) => {
-  checkAndResetExpiredSessions(); // 💡 每次使用者進入或刷新時先檢測跨週重置
+  checkAndResetExpiredSessions();
   const now = getTaipeiNow();
+  
+  // 1. 自動從 Cookie 辨識使用者
   const userEmail = verifyAuthCookie(req) || '';
+  
+  // 2. 這裡一定要宣告變數，否則下面 res.json 會找不到！
   let isUserMember = false;
+  let userName = '';
+
   if (userEmail) {
     const memberInfo = checkMemberStatus(userEmail);
     isUserMember = memberInfo.isMember;
+    userName = memberInfo.userName; // 從會員快取中取得姓名
   }
 
   let result = sessions.map(s => {
@@ -549,59 +557,47 @@ app.get('/api/sessions', async (req, res) => {
     
     const memberOpenTime = new Date(`${dateStr}T18:00:00+08:00`);
     memberOpenTime.setDate(memberOpenTime.getDate() - 1);
-
+    
     const nonMemberOpenTime = new Date(`${dateStr}T22:00:00+08:00`);
     nonMemberOpenTime.setDate(nonMemberOpenTime.getDate() - 1);
-
+    
     const closeTime = new Date(`${dateStr}T18:00:00+08:00`);
 
     let isAfterOpen = isUserMember ? (now >= memberOpenTime) : (now >= nonMemberOpenTime);
-    let isBeforeClose = now < closeTime;
-    let isOpen = isAfterOpen && isBeforeClose;
+    let isOpen = isAfterOpen && (now < closeTime);
 
-    let openTimeNotice = "";
-    let openTimeNoticeEn = "";
-
-    if (now >= closeTime) {
-      openTimeNotice = "⏰ 本場次已於 18:00 截止報名";
-      openTimeNoticeEn = "⏰ Registration closed at 18:00";
-    } else {
-      const mMonth = memberOpenTime.getMonth() + 1;
-      const mDate = memberOpenTime.getDate();
-      const nmMonth = nonMemberOpenTime.getMonth() + 1;
-      const nmDate = nonMemberOpenTime.getDate();
-
-      if (isUserMember) {
-        openTimeNotice = `${mMonth}/${mDate} 18:00 開放 (球敘當天18:00截止)`;
-        openTimeNoticeEn = `Opens ${mMonth}/${mDate} 18:00 (Closes at 18:00 on game day)`;
-      } else {
-        openTimeNotice = `${nmMonth}/${nmDate} 22:00 開放 (球敘當天18:00截止)`;
-        openTimeNoticeEn = `Opens ${nmMonth}/${nmDate} 22:00 (Closes at 18:00 on game day)`;
-      }
-    }
-    const isUserRegistered = userEmail ? registeredEmails[s.id]?.has(userEmail) : false;
-
-    const sanitizedAttendees = (sessionAttendees[s.id] || []).map(a => ({
-      isLoggedIn: !!userEmail, userEmail, userName, isMember: isUserMember, 
-      sessions: result
-    }));
+    let openTimeNotice = now >= closeTime ? "⏰ 本場次已於 18:00 截止報名" : (isUserMember ? `${memberOpenTime.getMonth()+1}/${memberOpenTime.getDate()} 18:00 開放` : `${nonMemberOpenTime.getMonth()+1}/${nonMemberOpenTime.getDate()} 22:00 開放`);
+    let openTimeNoticeEn = now >= closeTime ? "⏰ Closed at 18:00" : (isUserMember ? `Opens ${memberOpenTime.getMonth()+1}/${memberOpenTime.getDate()} 18:00` : `Opens ${nonMemberOpenTime.getMonth()+1}/${nonMemberOpenTime.getDate()} 22:00`);
 
     return {
-      ...s,
-      dateStr: dateStr,
-      displayDate: displayDate,
-      isOpen: isOpen,
-      openTimeStr: openTimeNotice,
+      ...s, 
+      dateStr, 
+      displayDate, 
+      isOpen,
+      openTimeStr: openTimeNotice, 
       openTimeStrEn: openTimeNoticeEn,
-      isUserRegistered: isUserRegistered,
-      remainingSeats: seatsCache[s.id],
+      isUserRegistered: userEmail ? registeredEmails[s.id]?.has(userEmail) : false,
+      remainingSeats: seatsCache[s.id], 
       waitlistCount: waitlistCache[s.id],
-      attendees: sanitizedAttendees
-    }
+      attendees: (sessionAttendees[s.id] || []).map(a => ({ 
+        name: a.name, 
+        email: maskEmail(a.email), 
+        status: a.status, 
+        isMember: a.isMember 
+      }))
+    };
   });
 
   result.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
-  res.json({ isMember: isUserMember, sessions: result });
+  
+  // 3. 這裡的 userName 就能成功讀取到了！
+  res.json({ 
+    isLoggedIn: !!userEmail,
+    userEmail: userEmail,
+    userName: userName,
+    isMember: isUserMember, 
+    sessions: result 
+  });
 });
 
 app.post('/api/grab', grabLimiter, async (req, res) => {
