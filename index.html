@@ -501,38 +501,26 @@
     let isGoogleInitialized = false;
     const GOOGLE_CLIENT_ID = "329337408769-4omaa4c4877335iv5thus8npk64bjbag.apps.googleusercontent.com";
 
-    // 💡 工具函式：解密 JWT Payload
-
     function checkRefreshCooldown() {
       const LAST_REFRESH_KEY = 'pickleball_last_refresh';
-      const COOLDOWN_MS = 2000;
       const now = Date.now();
       const lastRefresh = localStorage.getItem(LAST_REFRESH_KEY);
-
-      if (lastRefresh && (now - parseInt(lastRefresh)) < COOLDOWN_MS) {
-        return false;
-      }
+      if (lastRefresh && (now - parseInt(lastRefresh)) < 2000) return false;
       localStorage.setItem(LAST_REFRESH_KEY, now.toString());
       return true;
     }
 
-    function toggleNotice() {
-      const card = document.getElementById('notice-card');
-      card.classList.toggle('open');
-    }
+    function toggleNotice() { document.getElementById('notice-card').classList.toggle('open'); }
 
     function updateThemeButton() {
       const isDark = document.body.classList.contains('dark-mode');
       const themeBtn = document.getElementById('theme-btn');
-      if (themeBtn) {
-        themeBtn.innerText = isDark ? i18n[currentLang].themeLight : i18n[currentLang].themeDark;
-      }
+      if (themeBtn) themeBtn.innerText = isDark ? i18n[currentLang].themeLight : i18n[currentLang].themeDark;
     }
 
     function toggleTheme() {
       document.body.classList.toggle('dark-mode');
-      const isDark = document.body.classList.contains('dark-mode');
-      localStorage.setItem('app_theme', isDark ? 'dark' : 'light');
+      localStorage.setItem('app_theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
       updateThemeButton();
     }
 
@@ -540,102 +528,47 @@
       e.preventDefault();
       const email = "easternstarpickleball@gmail.com";
       const subject = "【匹克球報名系統】問題反應與諮詢";
-      
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-      if (isMobile) {
-        window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
-      } else {
-        const gmailWebUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${email}&su=${encodeURIComponent(subject)}`;
-        window.open(gmailWebUrl, '_blank');
-      }
+      if (isMobile) window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
+      else window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${email}&su=${encodeURIComponent(subject)}`, '_blank');
     }
 
     const i18n = {
       zh: {
-        appTitle: "匹克球團搶位系統",
-        contactAdmin: "✉️ 聯絡管理員",
-        noticeTitle: "⚠️ 報名注意事項",
-        noticeContent: "1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>2. 搶位時若剛好跨過開放秒數，可按 <strong>刷新名單</strong> 取得最新狀態。<br>3. 當天 <strong>18:00</strong> 後停止報名與取消報名。<br>4. 非會員報名時請務必填寫中文真實大名以利核對。<br>5.人數上限:36 人(不含工作人員)(滾動調整)<br>6.費用: 會員: 100 NTD 非會員: 180 NTD",
-        selectSessionHint: "請點選下方場次卡片進行報名",
-        remainingSeatsLabel: "剩餘名額：",
-        waitlistLabel: "候補位置：",
-        googleAuthHint: "請先驗證 Google 帳號：",
-        logoutBtn: "登出",
-        inputNameLabel: "✍️ 請輸入中文大名：",
-        selectSessionTitle: "📅 選擇場次：",
-        loading: "載入中...",
-        btnSelectFirst: "請先選擇場次",
-        btnGrabMain: "🔥 立刻報名（正取）",
-        btnGrabWaitlist: "⚠️ 搶候補位",
-        btnCompleted: "✅ 已完成報名",
-        btnCancel: "取消報名",
-        attendeeListTitle: "📋 報名名單",
-        refreshBtn: "🔄 刷新名單",
-        clickSessionToLoad: "請點擊上方場次以載入名單",
-        emptyAttendees: "目前尚無人報名，快來搶第一個！",
-        adminToolsTitle: "🛠️ 管理員工具箱：",
-        adminPause: "⏸️ 切換暫停/開放",
-        adminAdd: "➕ 手動新增球友",
-        adminRemove: "❌ 手動刪除球友",
-        adminReorder: "↕️ 調整球友順序",
-        adminSync: "🔄 強制同步試算表",
-        adminBlacklistManage: "🚫 黑名單管理",
-        themeDark: "🌙 深色",
-        themeLight: "☀️ 亮色",
-        seatsCount: "人",
-        waitlistRank: "第 {num} 位",
-        memberTag: " (會員)",
-        nonMemberTag: " (非會員)"
+        appTitle: "匹克球團搶位系統", contactAdmin: "✉️ 聯絡管理員", noticeTitle: "⚠️ 報名注意事項",
+        noticeContent: "1. 會員開放時間為球敘前一天 <strong>18:00</strong>；非會員開放時間為 <strong>22:00</strong>。<br>2. 搶位可按 <strong>刷新名單</strong> 取得最新狀態。<br>3. 當天 <strong>18:00</strong> 後停止報名與取消。<br>4. 非會員報名請務必填寫中文真實大名。<br>5.人數上限:36 人<br>6.費用: 會員 100 NTD / 非會員 180 NTD",
+        selectSessionHint: "請點選下方場次卡片進行報名", remainingSeatsLabel: "剩餘名額：", waitlistLabel: "候補位置：",
+        googleAuthHint: "請先驗證 Google 帳號：", logoutBtn: "登出", inputNameLabel: "✍️ 請輸入中文大名：",
+        selectSessionTitle: "📅 選擇場次：", loading: "載入中...", btnSelectFirst: "請先選擇場次",
+        btnGrabMain: "🔥 立刻報名（正取）", btnGrabWaitlist: "⚠️ 搶候補位", btnCompleted: "✅ 已完成報名",
+        btnCancel: "取消報名", attendeeListTitle: "📋 報名名單", refreshBtn: "🔄 刷新名單",
+        clickSessionToLoad: "請點擊上方場次以載入名單", emptyAttendees: "目前尚無人報名，快來搶第一個！",
+        adminToolsTitle: "🛠️ 管理員工具箱：", adminPause: "⏸️ 切換暫停/開放", adminAdd: "➕ 手動新增球友",
+        adminRemove: "❌ 手動刪除球友", adminReorder: "↕️ 調整球友順序", adminSync: "🔄 強制同步試算表",
+        adminBlacklistManage: "🚫 黑名單管理", themeDark: "🌙 深色", themeLight: "☀️ 亮色",
+        seatsCount: "人", waitlistRank: "第 {num} 位", memberTag: " (會員)", nonMemberTag: " (非會員)"
       },
       en: {
-        appTitle: "Pickleball Signup System",
-        contactAdmin: "✉️ Contact Admin",
-        noticeTitle: "⚠️ Notice",
-        noticeContent: "1. Members: Opens 18:00 day before session. Non-members: Opens 22:00.<br>2. Please refresh at opening time to update page.<br>3. Signups and cancellations close at <strong>18:00</strong> on session day.<br>4. Non-members must enter real full name for verification.<br>5.Capacity Limit: 36 people (excluding staff) (subject to rolling adjustments)<br>6.Drop-in Fee: NT$100 for members / NT$180 for non-members",
-        selectSessionHint: "Please select a session card below",
-        remainingSeatsLabel: "Seats Left: ",
-        waitlistLabel: "Waitlist Spot: ",
-        googleAuthHint: "Please verify Google Account:",
-        logoutBtn: "Logout",
-        inputNameLabel: "✍️ Enter Full Name:",
-        selectSessionTitle: "📅 Select Session:",
-        loading: "Loading...",
-        btnSelectFirst: "Select a Session First",
-        btnGrabMain: "🔥 Sign Up Now",
-        btnGrabWaitlist: "⚠️ Join Waitlist",
-        btnCompleted: "✅ Registered",
-        btnCancel: "Cancel Registration",
-        attendeeListTitle: "📋 Attendee List",
-        refreshBtn: "🔄 Refresh",
-        clickSessionToLoad: "Click session above to load attendees",
-        emptyAttendees: "No signups yet. Be the first!",
-        adminToolsTitle: "🛠️ Admin Tools:",
-        adminPause: "⏸️ Toggle Pause/Open",
-        adminAdd: "➕ Add Player",
-        adminRemove: "❌ Remove Player",
-        adminReorder: "↕️ Reorder Player",
-        adminSync: "🔄 Force Sync Sheet",
-        adminBlacklistManage: "🚫 Blacklist Mgmt",
-        themeDark: "🌙 Dark",
-        themeLight: "☀️ Light",
-        seatsCount: " Left",
-        waitlistRank: "No. {num}",
-        memberTag: " (Member)",
-        nonMemberTag: " (Guest)"
+        appTitle: "Pickleball Signup System", contactAdmin: "✉️ Contact Admin", noticeTitle: "⚠️ Notice",
+        noticeContent: "1. Members: Opens 18:00. Non-members: Opens 22:00.<br>2. Refresh for latest status.<br>3. Closes at 18:00 on game day.<br>4. Enter real full name.<br>5.Limit: 36 people<br>6.Fee: Member NT$100 / Guest NT$180",
+        selectSessionHint: "Please select a session card below", remainingSeatsLabel: "Seats Left: ", waitlistLabel: "Waitlist Spot: ",
+        googleAuthHint: "Please verify Google Account:", logoutBtn: "Logout", inputNameLabel: "✍️ Enter Full Name:",
+        selectSessionTitle: "📅 Select Session:", loading: "Loading...", btnSelectFirst: "Select a Session First",
+        btnGrabMain: "🔥 Sign Up Now", btnGrabWaitlist: "⚠️ Join Waitlist", btnCompleted: "✅ Registered",
+        btnCancel: "Cancel Registration", attendeeListTitle: "📋 Attendee List", refreshBtn: "🔄 Refresh",
+        clickSessionToLoad: "Click session above to load attendees", emptyAttendees: "No signups yet. Be the first!",
+        adminToolsTitle: "🛠️ Admin Tools:", adminPause: "⏸️ Toggle Pause/Open", adminAdd: "➕ Add Player",
+        adminRemove: "❌ Remove Player", adminReorder: "↕️ Reorder Player", adminSync: "🔄 Force Sync Sheet",
+        adminBlacklistManage: "🚫 Blacklist Mgmt", themeDark: "🌙 Dark", themeLight: "☀️ Light",
+        seatsCount: " Left", waitlistRank: "No. {num}", memberTag: " (Member)", nonMemberTag: " (Guest)"
       }
     };
 
-    function saveCustomName(val) {
-      localStorage.setItem('pickleball_custom_name', val);
-    }
-
+    function saveCustomName(val) { localStorage.setItem('pickleball_custom_name', val); }
     function loadCustomName() {
       const savedName = localStorage.getItem('pickleball_custom_name');
       const inputElem = document.getElementById('custom-name');
-      if (savedName && inputElem) {
-        inputElem.value = savedName;
-      }
+      if (savedName && inputElem) inputElem.value = savedName;
     }
 
     function toggleLanguage() {
@@ -647,57 +580,57 @@
     function applyLanguage() {
       document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
-        if (i18n[currentLang][key]) {
-          el.innerHTML = i18n[currentLang][key];
-        }
+        if (i18n[currentLang][key]) el.innerHTML = i18n[currentLang][key];
       });
-
       updateThemeButton();
-
-      if (selectedSession) {
-        selectSession(selectedSession);
-      } else {
-        loadSessions();
-      }
+      if (selectedSession) selectSession(selectedSession);
+      else loadSessions();
     }
 
     function getTodayDateStr() {
       const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-
-    function clearAuthStorage() {
-      localStorage.removeItem('pickleball_token');
-      localStorage.removeItem('pickleball_is_member');
-      userToken = null;
-      userEmail = null;
-      isCurrentUserMember = false;
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     }
 
     function updateNameInputVisibility() {
       const nameBox = document.getElementById('non-member-name-box');
       if (!nameBox) return;
-
       if (userEmail && isCurrentUserMember === false) {
-        nameBox.style.display = 'block';
-        loadCustomName();
+        nameBox.style.display = 'block'; loadCustomName();
       } else {
         nameBox.style.display = 'none';
       }
     }
 
-    window.onload = function() {
-      if (localStorage.getItem('app_theme') === 'dark') {
-        document.body.classList.add('dark-mode');
+    // 💡 繪製 Google 登入按鈕
+    function renderGoogleButton() {
+      const container = document.getElementById('google-signin-btn-container');
+      if (container && window.google && google.accounts && google.accounts.id) {
+        container.innerHTML = '';
+        google.accounts.id.renderButton(container, { theme: "outline", size: "large", width: "250" });
       }
+    }
 
+    // 💡 切換為未登入狀態 UI
+    function showLoggedOutState() {
+      document.getElementById('auth-box').style.display = 'block';
+      document.getElementById('user-profile').style.display = 'none';
+      renderGoogleButton(); 
+    }
+
+    // 💡 切換為已登入狀態 UI
+    function showLoggedInState(name, email) {
+      document.getElementById('auth-box').style.display = 'none';
+      const profileBox = document.getElementById('user-profile');
+      profileBox.style.display = 'flex';
+      document.getElementById('user-profile-text').innerText = `👤 ${name} (${email})`;
+    }
+
+    window.onload = function() {
+      if (localStorage.getItem('app_theme') === 'dark') document.body.classList.add('dark-mode');
       applyLanguage();
 
-      // 💡 1. 移除從 localStorage 讀取舊 Token 的邏輯
-      // 💡 2. 先發送 API 讀取 Cookie 判斷身分，完成後再初始化 Google 按鈕
+      // 先載入場次與 Cookie 身分，完成後才初始化 Google 模組
       loadSessions().then(() => {
         tryInitGoogleOneTap();
       });
@@ -709,26 +642,15 @@
           google.accounts.id.initialize({
             client_id: GOOGLE_CLIENT_ID,
             callback: handleCredentialResponse,
-            auto_select: true,            
+            auto_select: false, // 關閉自動選擇避免衝突
             use_fedcm_for_prompt: true
           });
-
-          const signinBtnContainer = document.getElementById('google-signin-btn-container');
-          if (signinBtnContainer) {
-            signinBtnContainer.innerHTML = '';
-            google.accounts.id.renderButton(signinBtnContainer, { 
-              theme: "outline", 
-              size: "large",
-              width: "250"
-            });
-          }
-
-          if (!userToken) {
-            google.accounts.id.prompt();
-          }
-
           isGoogleInitialized = true;
         }
+
+        renderGoogleButton();
+
+        if (!userEmail) google.accounts.id.prompt();
       } else {
         setTimeout(tryInitGoogleOneTap, 100);
       }
@@ -736,72 +658,31 @@
 
     async function handleCredentialResponse(response) {
       try {
-        // 將 Google 憑證送給後端換取 7 天 HttpOnly Cookie
         const res = await fetch('/api/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: response.credential })
         });
-        
         const data = await res.json();
-        if (data.success) {
-          // Cookie 設置成功，重新載入場次 (後端會辨識身分)
-          await loadSessions();
-        } else {
-          alert("登入驗證失敗！");
-        }
-      } catch (err) {
-        alert("網路連線錯誤，請重試！");
-      }
-    }
-
-    function showLoggedInState(name, email) {
-      document.getElementById('auth-box').style.display = 'none';
-      const profileBox = document.getElementById('user-profile');
-      profileBox.style.display = 'flex';
-      document.getElementById('user-profile-text').innerText = `👤 ${name} (${email})`;
-    }
-    // 💡 新增：獨立繪製 Google 登入按鈕
-    function renderGoogleButton() {
-      const container = document.getElementById('google-signin-btn-container');
-      if (container && window.google && google.accounts && google.accounts.id) {
-        container.innerHTML = '';
-        google.accounts.id.renderButton(container, { theme: "outline", size: "large", width: "250" });
-      }
-    }
-
-    // 💡 新增：處理未登入狀態的 UI 顯示
-    function showLoggedOutState() {
-      document.getElementById('auth-box').style.display = 'block';
-      document.getElementById('user-profile').style.display = 'none';
-      renderGoogleButton();
+        if (data.success) await loadSessions(); // 成功後自動更新畫面
+        else alert("登入驗證失敗！");
+      } catch (err) { alert("網路連線錯誤，請重試！"); }
     }
 
     async function logout() {
       if (window.google && google.accounts && google.accounts.id) {
         try { google.accounts.id.cancel(); } catch (e) {}
       }
-
-      // 呼叫後端清除 Cookie
+      
       await fetch('/api/auth/logout', { method: 'POST' }); 
       
       userEmail = null;
       isCurrentUserMember = false;
-
-      document.getElementById('user-profile').style.display = 'none';
-      document.getElementById('auth-box').style.display = 'block';
-      updateNameInputVisibility();
-
       selectedSession = null;
+      
+      showLoggedOutState();
+      updateNameInputVisibility();
       await loadSessions();
-
-      if (window.google && google.accounts && google.accounts.id) {
-        const signinBtnContainer = document.getElementById('google-signin-btn-container');
-        if (signinBtnContainer) {
-          signinBtnContainer.innerHTML = '';
-          google.accounts.id.renderButton(signinBtnContainer, { theme: "outline", size: "large", width: "250" });
-        }
-      }
     }
 
     function getDayPrefix(session) {
@@ -812,15 +693,13 @@
       if (str.includes("四") || str.includes("Thu")) return "thu";
       if (str.includes("五") || str.includes("Fri")) return "fri";
       if (str.includes("六") || str.includes("Sat")) return "sat";
-      if (str.includes("日") || str.includes("天") || str.includes("Sun")) return "sun";
-      return "mon";
+      return "sun";
     }
 
     function renderAttendees(attendees) {
       const section = document.getElementById('attendees-section');
       const listContainer = document.getElementById('attendees-list');
       const t = i18n[currentLang];
-
       section.style.display = 'block';
 
       if (!attendees || attendees.length === 0) {
@@ -833,64 +712,43 @@
         const isWaitlist = item.status.includes('候補') || item.status.includes('Waitlist');
         const tagClass = isWaitlist ? 'waitlist' : 'success';
         const memberTag = item.isMember ? t.memberTag : t.nonMemberTag;
-
-        html += `
-          <div class="attendee-item">
-            <span class="attendee-name">${index + 1}.${item.name}</span>
-            <span class="status-tag ${tagClass}">${item.status}${memberTag}</span>
-          </div>
-        `;
+        html += `<div class="attendee-item"><span class="attendee-name">${index + 1}.${item.name}</span><span class="status-tag ${tagClass}">${item.status}${memberTag}</span></div>`;
       });
-
       listContainer.innerHTML = html;
     }
 
     let currentSessionFetchId = 0;
 
     async function loadSessions(isManualRefresh = false) {
-      if (isManualRefresh && !checkRefreshCooldown()) {
-        return;
-      }
-
+      if (isManualRefresh && !checkRefreshCooldown()) return;
       const fetchId = ++currentSessionFetchId;
 
       try {
-        const url = userEmail ? `/api/sessions?userEmail=${encodeURIComponent(userEmail)}` : '/api/sessions';
-        const res = await fetch(url);
+        const res = await fetch('/api/sessions'); // 瀏覽器會自動帶 Cookie
         const data = await res.json();
+        if (fetchId !== currentSessionFetchId) return;
 
-        if (fetchId !== currentSessionFetchId) {
-          return;
+        // 💡 判斷後端回傳的登入狀態
+        if (data.isLoggedIn) {
+          userEmail = data.userEmail;
+          isCurrentUserMember = data.isMember;
+          localStorage.setItem('pickleball_is_member', data.isMember ? 'true' : 'false');
+          showLoggedInState(data.userName, data.userEmail);
+        } else {
+          userEmail = null;
+          isCurrentUserMember = false;
+          showLoggedOutState();
         }
 
-        let sessions = [];
-        if (Array.isArray(data)) {
-          sessions = data;
-        } else if (data && Array.isArray(data.sessions)) {
-          sessions = data.sessions;
-          
-          if (userEmail) {
-            if (data.isMember === true) {
-              isCurrentUserMember = true;
-              localStorage.setItem('pickleball_is_member', 'true');
-            } else if (localStorage.getItem('pickleball_is_member') !== 'true') {
-              isCurrentUserMember = false;
-              localStorage.setItem('pickleball_is_member', 'false');
-            }
-          }
-        }
-
-        currentLoadedSessions = sessions;
+        currentLoadedSessions = data.sessions || [];
         updateNameInputVisibility();
 
         const btnContainer = document.getElementById('session-buttons');
         btnContainer.innerHTML = '';
-
         const todayStr = getTodayDateStr();
 
-        sessions.forEach(s => {
+        currentLoadedSessions.forEach(s => {
           const prefix = getDayPrefix(s);
-          
           const itemWrapper = document.createElement('div');
           itemWrapper.className = 'session-item-wrapper';
 
@@ -901,29 +759,9 @@
           
           const sessionTitle = (currentLang === 'en' && s.nameEn) ? s.nameEn : s.name;
           const isFutureSession = s.dateStr > todayStr;
+          btn.disabled = (!s.isOpen && isFutureSession);
 
-          if (!s.isOpen && isFutureSession) {
-            btn.disabled = true;
-          } else {
-            btn.disabled = false;
-          }
-
-          let statusText = "";
-          if (s.isOpen) {
-            if (s.remainingSeats > 0) {
-              statusText = currentLang === 'en' 
-                ? `Seats Left: ${s.remainingSeats}` 
-                : `剩 ${s.remainingSeats} 位`;
-            } else {
-              statusText = currentLang === 'en' 
-                ? `Waitlist Spot: No. ${s.waitlistCount + 1}` 
-                : `候補第 ${s.waitlistCount + 1} 位`;
-            }
-          } else {
-            const timeNotice = (currentLang === 'en' && s.openTimeStrEn) ? s.openTimeStrEn : s.openTimeStr;
-            statusText = `🔒 ${timeNotice || '尚未開放'}`;
-          }
-
+          let statusText = s.isOpen ? (s.remainingSeats > 0 ? (currentLang === 'en' ? `Seats Left: ${s.remainingSeats}` : `剩 ${s.remainingSeats} 位`) : (currentLang === 'en' ? `Waitlist Spot: No. ${s.waitlistCount + 1}` : `候補第 ${s.waitlistCount + 1} 位`)) : `🔒 ${(currentLang === 'en' && s.openTimeStrEn) ? s.openTimeStrEn : s.openTimeStr || '尚未開放'}`;
           let userTag = s.isUserRegistered ? (currentLang === 'en' ? ' [Registered]' : ' [已報名]') : '';
           
           btn.innerHTML = `${sessionTitle} (${s.displayDate})<br><span style="font-size: 0.9em; font-weight: normal;">${statusText}${userTag}</span>`;
@@ -939,80 +777,44 @@
           btnContainer.appendChild(itemWrapper);
 
           if (isSelected) {
-            selectedSession = s; 
-            updateSeatsDisplay(s);
-            updateActionButtons(s);
-            renderAttendees(s.attendees);
+            selectedSession = s; updateSeatsDisplay(s); updateActionButtons(s); renderAttendees(s.attendees);
           }
         });
-
         startCountdownInterval();
-
-      } catch (err) {
-        console.error("載入失敗：", err);
-        document.getElementById('session-buttons').innerText = '❌ 連線失敗';
-      }
+      } catch (err) { document.getElementById('session-buttons').innerText = '❌ 連線失敗'; }
     }
 
     function getTargetOpenTime(dateStr, isMember) {
       const targetDate = new Date(dateStr + 'T00:00:00');
       targetDate.setDate(targetDate.getDate() - 1); 
-      const openHour = isMember ? 18 : 22; 
-      targetDate.setHours(openHour, 0, 0, 0);
+      targetDate.setHours(isMember ? 18 : 22, 0, 0, 0);
       return targetDate.getTime();
     }
 
     function startCountdownInterval() {
       if (countdownTimer) clearInterval(countdownTimer);
-
       updateCountdownDisplay(); 
       countdownTimer = setInterval(updateCountdownDisplay, 1000);
     }
 
     function updateCountdownDisplay() {
       if (!currentLoadedSessions || currentLoadedSessions.length === 0) return;
-
       const now = Date.now();
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000; 
 
       currentLoadedSessions.forEach(s => {
         const barElem = document.getElementById(`countdown-bar-${s.id}`);
         if (!barElem) return;
+        if (s.isOpen) { barElem.style.display = 'none'; return; }
 
-        if (s.isOpen) {
-          barElem.style.display = 'none';
-          return;
-        }
-
-        const openTime = getTargetOpenTime(s.dateStr, isCurrentUserMember);
-        const diff = openTime - now;
-
-        if (diff > 0 && diff <= ONE_DAY_MS) {
+        const diff = getTargetOpenTime(s.dateStr, isCurrentUserMember) - now;
+        if (diff > 0 && diff <= 86400000) {
           barElem.style.display = 'flex';
-          const totalSeconds = Math.floor(diff / 1000);
-          const hours = Math.floor(totalSeconds / 3600);
-          const minutes = Math.floor((totalSeconds % 3600) / 60);
-          const seconds = totalSeconds % 60;
-
-          let timeStr = "";
-          if (hours > 0) {
-            timeStr = `${hours}小時 ${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`;
-          } else {
-            timeStr = `${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`;
-          }
-
-          barElem.innerHTML = `
-            <span>⏳ 距離開放：<strong>${timeStr}</strong></span>
-          `;
-        } 
-        else if (diff <= 0 && diff > -1800000) { 
+          const t = Math.floor(diff / 1000);
+          barElem.innerHTML = `<span>⏳ 距離開放：<strong>${t >= 3600 ? Math.floor(t / 3600) + '小時 ' : ''}${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}分 ${String(t % 60).padStart(2, '0')}秒</strong></span>`;
+        } else if (diff <= 0 && diff > -1800000) { 
           barElem.style.display = 'flex';
-          barElem.innerHTML = `
-            <span style="color:#e53e3e; font-weight:bold;">🔥 已到開放時間，請立刻重新整理！</span>
-            <button class="btn-timer-refresh" onclick="event.stopPropagation(); loadSessions(true);">🔄 立刻重新整理</button>
-          `;
-        } 
-        else {
+          barElem.innerHTML = `<span style="color:#e53e3e; font-weight:bold;">🔥 已開放，請點擊刷新！</span><button class="btn-timer-refresh" onclick="event.stopPropagation(); loadSessions(true);">🔄 刷新</button>`;
+        } else {
           barElem.style.display = 'none';
         }
       });
@@ -1023,21 +825,11 @@
       const t = i18n[currentLang];
       const sessionTitle = (currentLang === 'en' && session.nameEn) ? session.nameEn : session.name;
 
-      const titleElem = document.getElementById('session-selector-title');
-      titleElem.innerText = `${t.selectSessionTitle} ${sessionTitle} (${session.displayDate})`;
-
-      const buttons = document.querySelectorAll('.session-btn');
-      buttons.forEach(btn => {
-        if (btn.dataset.id === session.id) {
-          btn.classList.add('selected');
-        } else {
-          btn.classList.remove('selected');
-        }
-      });
+      document.getElementById('session-selector-title').innerText = `${t.selectSessionTitle} ${sessionTitle} (${session.displayDate})`;
+      document.querySelectorAll('.session-btn').forEach(btn => btn.classList.toggle('selected', btn.dataset.id === session.id));
 
       updateSeatsDisplay(session);
       updateActionButtons(session);
-
       document.getElementById('attendees-title-text').innerText = `📋 ${sessionTitle}`;
       renderAttendees(session.attendees);
     }
@@ -1046,313 +838,104 @@
       const grabBtn = document.getElementById('btn-grab');
       const cancelBtn = document.getElementById('btn-cancel');
       const t = i18n[currentLang];
-
-      const now = new Date();
-      const todayStr = getTodayDateStr();
-      const currentHour = now.getHours();
-
-      const isPast = session.dateStr < todayStr;
-      const isToday = session.dateStr === todayStr;
-      const isClosedAfter18 = isToday && currentHour >= 18;
-
-      if (isPast || isClosedAfter18) {
-        grabBtn.disabled = true;
-        grabBtn.innerText = currentLang === 'en' ? '⏰ Signup Closed (After 18:00)' : '⏰ 報名已截止 (18:00後)';
-
-        cancelBtn.disabled = true;
-        cancelBtn.innerText = currentLang === 'en' ? '⏰ Cancel Closed (After 18:00)' : '⏰ 禁止取消 (18:00後)';
+      const now = new Date(); const todayStr = getTodayDateStr();
+      
+      if (session.dateStr < todayStr || (session.dateStr === todayStr && now.getHours() >= 18)) {
+        grabBtn.disabled = true; grabBtn.innerText = currentLang === 'en' ? '⏰ Signup Closed' : '⏰ 報名已截止';
+        cancelBtn.disabled = true; cancelBtn.innerText = currentLang === 'en' ? '⏰ Cancel Closed' : '⏰ 禁止取消';
         return;
       }
 
       if (session.isUserRegistered) {
-        grabBtn.disabled = true;
-        grabBtn.innerText = t.btnCompleted;
-
-        cancelBtn.disabled = false;
-        cancelBtn.innerText = `❌ ${t.btnCancel}`;
-      } 
-      else {
-        if (!userToken) {
-          grabBtn.disabled = true;
-          grabBtn.innerText = currentLang === 'en' ? '🔒 Please Sign In First' : '🔒 請先驗證 Google 帳號';
+        grabBtn.disabled = true; grabBtn.innerText = t.btnCompleted;
+        cancelBtn.disabled = false; cancelBtn.innerText = `❌ ${t.btnCancel}`;
+      } else {
+        if (!userEmail) {
+          grabBtn.disabled = true; grabBtn.innerText = currentLang === 'en' ? '🔒 Please Sign In First' : '🔒 請先驗證 Google 帳號';
         } else {
-          grabBtn.disabled = false;
-          grabBtn.innerText = session.remainingSeats > 0 ? t.btnGrabMain : t.btnGrabWaitlist;
+          grabBtn.disabled = false; grabBtn.innerText = session.remainingSeats > 0 ? t.btnGrabMain : t.btnGrabWaitlist;
         }
-
-        cancelBtn.disabled = true;
-        cancelBtn.innerText = t.btnCancel;
+        cancelBtn.disabled = true; cancelBtn.innerText = t.btnCancel;
       }
     }
 
     function updateSeatsDisplay(session) {
-      const labelElem = document.getElementById('status-label');
-      const seatsElem = document.getElementById('seats');
       const t = i18n[currentLang];
-
-      if (session.remainingSeats > 0) {
-        labelElem.innerText = t.remainingSeatsLabel;
-        seatsElem.innerText = `${session.remainingSeats}${t.seatsCount}`;
-      } else {
-        labelElem.innerText = t.waitlistLabel;
-        seatsElem.innerText = t.waitlistRank.replace('{num}', session.waitlistCount + 1);
-      }
+      document.getElementById('status-label').innerText = session.remainingSeats > 0 ? t.remainingSeatsLabel : t.waitlistLabel;
+      document.getElementById('seats').innerText = session.remainingSeats > 0 ? `${session.remainingSeats}${t.seatsCount}` : t.waitlistRank.replace('{num}', session.waitlistCount + 1);
     }
 
     async function startGrab() {
-      // 💡 改用 userEmail 判斷是否登入
-      if (!selectedSession || !userEmail) {
-        alert(currentLang === 'en' ? "Please login with Google first!" : "請先登入 Google 帳號！");
-        return;
-      }
+      if (!selectedSession || !userEmail) return alert(currentLang === 'en' ? "Please login!" : "請先登入帳號！");
 
       const now = new Date(); const todayStr = getTodayDateStr();
-      if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
-        alert(currentLang === 'en' ? "Signups are closed after 18:00 on session day!" : "當天 18:00 後已截止報名！");
-        return;
-      }
+      if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) return alert(currentLang === 'en' ? "Closed!" : "已截止報名！");
 
       let customNameVal = '';
       if (!isCurrentUserMember) {
         customNameVal = document.getElementById('custom-name').value.trim();
-        if (!customNameVal) {
-          alert(currentLang === 'en' ? "Please enter your Full Name!" : '請輸入您的「中文大名」！');
-          document.getElementById('custom-name').focus();
-          return;
-        }
+        if (!customNameVal) { document.getElementById('custom-name').focus(); return alert(currentLang === 'en' ? "Enter Name!" : '請輸入「中文大名」！'); }
         saveCustomName(customNameVal); 
       }
 
-      const grabBtn = document.getElementById('btn-grab');
-      grabBtn.disabled = true;
+      document.getElementById('btn-grab').disabled = true;
 
       try {
         const res = await fetch('/api/grab', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // 💡 拿掉 token 傳遞
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId: selectedSession.id, customName: customNameVal })
         });
         
-        // 💡 如果攔截到 401 (Cookie過期)
         if (res.status === 401) {
-          alert(currentLang === 'en' ? "Login session expired (7 days). Please verify again!" : "登入狀態已超過 7 天過期，請重新驗證登入！");
-          logout();
-          return;
+          alert(currentLang === 'en' ? "Session expired. Please verify again!" : "登入已過期，請重新驗證登入！");
+          return logout();
         }
 
         const result = await res.json();
         alert(result.message);
         if (result.success && selectedSession) selectedSession.isUserRegistered = true;
         await loadSessions();
-
-      } catch (err) {
-        alert('❌ 送出失敗，請確認網路連線。');
-      } finally {
-        if (selectedSession) updateActionButtons(selectedSession);
-      }
+      } catch (err) { alert('❌ 送出失敗。'); } 
+      finally { if (selectedSession) updateActionButtons(selectedSession); }
     }
 
     async function startCancel() {
       if (!selectedSession || !userEmail) return;
 
       const now = new Date(); const todayStr = getTodayDateStr();
-      if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) {
-        alert(currentLang === 'en' ? "Cancellations are not allowed after 18:00 on session day!" : "當天 18:00 後已禁止取消報名！");
-        return;
-      }
+      if (selectedSession.dateStr < todayStr || (selectedSession.dateStr === todayStr && now.getHours() >= 18)) return alert(currentLang === 'en' ? "Cancellations closed!" : "當天 18:00 後已禁止取消！");
 
       const title = (currentLang === 'en' && selectedSession.nameEn) ? selectedSession.nameEn : selectedSession.name;
       if (!confirm(`確定要取消【${title}】的報名嗎？`)) return;
 
-      const cancelBtn = document.getElementById('btn-cancel');
-      cancelBtn.disabled = true;
+      document.getElementById('btn-cancel').disabled = true;
 
       try {
         const res = await fetch('/api/cancel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // 💡 拿掉 token 傳遞
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId: selectedSession.id })
         });
         
         if (res.status === 401) {
-          alert(currentLang === 'en' ? "Login session expired. Please verify again!" : "登入狀態已過期，請重新驗證登入！");
-          logout();
-          return;
+          alert(currentLang === 'en' ? "Session expired. Please verify again!" : "登入已過期，請重新驗證登入！");
+          return logout();
         }
 
         const result = await res.json();
         alert(result.message);
         if (result.success && selectedSession) selectedSession.isUserRegistered = false;
         await loadSessions();
-
-      } catch (err) {
-        alert('❌ 取消失敗，請確認網路連線。');
-      } finally {
-        if (selectedSession) updateActionButtons(selectedSession);
-      }
+      } catch (err) { alert('❌ 取消失敗。'); } 
+      finally { if (selectedSession) updateActionButtons(selectedSession); }
     }
     
-    async function adminTogglePause() {
-      const secret = prompt("請輸入管理員密碼：");
-      if (!secret) return;
-
-      try {
-        const res = await fetch('/api/admin/toggle-pause', {
-          method: 'POST',
-          headers: { 'x-admin-secret': secret }
-        });
-        const data = await res.json();
-        alert(data.message);
-      } catch (e) {
-        alert("❌ 操作失敗，請檢查伺服器連線。");
-      }
-    }
-
-    async function adminAddUser() {
-      if (!selectedSession) return alert("請先選擇場次！");
-      const secret = prompt("請輸入管理員密碼：");
-      if (!secret) return;
-
-      const name = prompt("請輸入球友姓名：");
-      const email = prompt("請輸入球友 Email：");
-      if (!name || !email) return alert("姓名與 Email 皆為必填！");
-
-      try {
-        const res = await fetch('/api/admin/add-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
-          body: JSON.stringify({ sessionId: selectedSession.id, name, email })
-        });
-        const data = await res.json();
-        alert(data.message);
-        if (data.success) loadSessions();
-      } catch (e) {
-        alert("❌ 新增失敗！");
-      }
-    }
-
-    async function adminRemoveUser() {
-      if (!selectedSession) return alert("請先選擇場次！");
-      const secret = prompt("請輸入管理員密碼：");
-      if (!secret) return;
-
-      const email = prompt("請輸入要刪除的 Email：");
-      if (!email) return;
-
-      try {
-        const res = await fetch('/api/admin/remove-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
-          body: JSON.stringify({ sessionId: selectedSession.id, email })
-        });
-        const data = await res.json();
-        alert(data.message);
-        if (data.success) loadSessions();
-      } catch (e) {
-        alert("❌ 刪除失敗！");
-      }
-    }
-
-    async function adminReorderUser() {
-      if (!selectedSession) return alert("請先選擇場次！");
-      const secret = prompt("請輸入管理員密碼：");
-      if (!secret) return;
-
-      const email = prompt("請輸入球友 Email：");
-      if (!email) return;
-
-      const newPosition = prompt("請輸入目標位置（如：1）：");
-      if (!newPosition) return;
-
-      try {
-        const res = await fetch('/api/admin/reorder-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
-          body: JSON.stringify({ sessionId: selectedSession.id, email, newPosition })
-        });
-        const data = await res.json();
-        alert(data.message);
-        if (data.success) loadSessions();
-      } catch (e) {
-        alert("❌ 調整失敗！");
-      }
-    }
-
-    async function triggerAdminSync() {
-      const secret = prompt("請輸入管理員密碼：");
-      if (!secret) return;
-
-      try {
-        const res = await fetch('/api/admin/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret }
-        });
-        const result = await res.json();
-        alert(result.message);
-        if (result.success) loadSessions();
-      } catch (e) {
-        alert("❌ 同步失敗！");
-      }
-    }
-
-    async function adminManageBlacklist() {
-      const secret = prompt("請輸入管理員密碼：");
-      if (!secret) return;
-
-      const action = prompt("請選擇操作類型：\n輸入【1】新增黑名單\n輸入【2】解除/移除黑名單");
-      if (!action) return;
-
-      if (action.trim() === '1') {
-        const target = prompt("請輸入要加入黑名單的「球友姓名」或「Email」：");
-        if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
-
-        try {
-          const res = await fetch('/api/admin/add-blacklist', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
-            body: JSON.stringify({ target: target.trim() })
-          });
-          const data = await res.json();
-          alert(data.message);
-          if (data.success && typeof loadSessions === 'function') loadSessions();
-        } catch (e) {
-          console.error("❌ 操作失敗：", e);
-          alert("❌ 操作失敗，請檢查網路連線。");
-        }
-
-      } else if (action.trim() === '2') {
-        const target = prompt("請輸入要解除黑名單的「球友姓名」或「Email」：");
-        if (!target || !target.trim()) return alert("❌ 輸入不能為空白！");
-
-        try {
-          const res = await fetch('/api/admin/remove-blacklist', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
-            body: JSON.stringify({ target: target.trim(), email: target.trim(), name: target.trim() })
-          });
-          const data = await res.json();
-          alert(data.message);
-          if (data.success && typeof loadSessions === 'function') loadSessions();
-        } catch (e) {
-          console.error("❌ 操作失敗：", e);
-          alert("❌ 操作失敗，請檢查網路連線。");
-        }
-      } else {
-        alert("❌ 無效選項，請輸入 1 或 2！");
-      }
-    }
-
-    // 💡 切回分頁時：若檢查發現已過期，自動登出並恢復介面
-    document.addEventListener('visibilitychange', function() {
-      if (!document.hidden && userToken) {
-        if (isTokenExpired(userToken)) {
-          console.log("⏰ 切回分頁偵測到 Token 已過期，執行自動登出...");
-          logout();
-        }
-      }
-    });
+    // 管理員 API
+    async function adminTogglePause() { const s = prompt("管理員密碼："); if(!s) return; try{ const r = await fetch('/api/admin/toggle-pause', {method: 'POST', headers: { 'x-admin-secret': s }}); alert((await r.json()).message); } catch(e){ alert("❌ 失敗"); } }
+    async function adminAddUser() { if(!selectedSession) return alert("請先選擇場次！"); const s = prompt("管理員密碼："); if(!s) return; const n = prompt("姓名："); const e = prompt("Email："); if(!n || !e) return; try{ const r = await fetch('/api/admin/add-user', {method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': s }, body: JSON.stringify({ sessionId: selectedSession.id, name:n, email:e })}); const d = await r.json(); alert(d.message); if(d.success) loadSessions(); } catch(e){ alert("❌ 失敗"); } }
+    async function adminRemoveUser() { if(!selectedSession) return alert("請先選擇場次！"); const s = prompt("管理員密碼："); if(!s) return; const e = prompt("要刪除的 Email："); if(!e) return; try{ const r = await fetch('/api/admin/remove-user', {method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': s }, body: JSON.stringify({ sessionId: selectedSession.id, email:e })}); const d = await r.json(); alert(d.message); if(d.success) loadSessions(); } catch(e){ alert("❌ 失敗"); } }
+    async function adminReorderUser() { if(!selectedSession) return alert("請先選擇場次！"); const s = prompt("管理員密碼："); if(!s) return; const e = prompt("Email："); const p = prompt("目標位置："); if(!e || !p) return; try{ const r = await fetch('/api/admin/reorder-user', {method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': s }, body: JSON.stringify({ sessionId: selectedSession.id, email:e, newPosition:p })}); const d = await r.json(); alert(d.message); if(d.success) loadSessions(); } catch(e){ alert("❌ 失敗"); } }
+    async function triggerAdminSync() { const s = prompt("管理員密碼："); if(!s) return; try{ const r = await fetch('/api/admin/sync', {method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': s }}); const d = await r.json(); alert(d.message); if(d.success) loadSessions(); } catch(e){ alert("❌ 失敗"); } }
+    async function adminManageBlacklist() { const s = prompt("管理員密碼："); if(!s) return; const a = prompt("【1】新增黑名單\n【2】解除黑名單"); if(!a) return; if(a.trim()==='1'){ const t = prompt("「球友姓名」或「Email」："); if(!t) return; try{ const r = await fetch('/api/admin/add-blacklist', {method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': s }, body: JSON.stringify({ target: t.trim() })}); const d = await r.json(); alert(d.message); if(d.success) loadSessions(); } catch(e){} } else if(a.trim()==='2'){ const t = prompt("「球友姓名」或「Email」："); if(!t) return; try{ const r = await fetch('/api/admin/remove-blacklist', {method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-secret': s }, body: JSON.stringify({ target: t.trim(), email: t.trim(), name: t.trim() })}); const d = await r.json(); alert(d.message); if(d.success) loadSessions(); } catch(e){} } }
   </script>
 </body>
 </html>
