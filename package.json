@@ -16,5 +16,8 @@
     "google-auth-library": "^10.9.0",
     "google-spreadsheet": "^5.3.0",
     "cors": "^2.8.5"
+  },
+  "engines":{
+    "node": ">=22.23.4"
   }
 }
